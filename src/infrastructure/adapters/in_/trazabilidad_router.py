@@ -24,9 +24,11 @@ from src.infrastructure.dependencies import (
     get_consultar_progreso_uc,
     get_dashboard_docente_uc,
     get_registrar_interaccion_uc,
+    require_jwt,
 )
 
-router = APIRouter(tags=["Trazabilidad"])
+# Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
+router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 
 class InteraccionRequest(BaseModel):

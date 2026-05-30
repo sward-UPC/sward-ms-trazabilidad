@@ -19,6 +19,15 @@ async def test_health_ok(client):
 
 
 @pytest.mark.asyncio
+async def test_endpoint_protegido_sin_token_retorna_401(anon_client):
+    resp = await anon_client.post(
+        INTERACTIONS,
+        json={"estudiante_id": ESTUDIANTE, "curso_id": CURSO, "tipo": "vista"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_registrar_interaccion_devuelve_201(client):
     resp = await client.post(
         INTERACTIONS,

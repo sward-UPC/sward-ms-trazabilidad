@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sward_shared.auth import build_require_jwt, build_require_service_key
 
 from src.application.use_cases.calcular_indicadores import CalcularIndicadoresUseCase
 from src.application.use_cases.consultar_dashboard_docente import (
@@ -13,7 +14,14 @@ from src.infrastructure.adapters.out_.eventbridge_adapter import EventBridgeAdap
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
 )
+from src.infrastructure.config.settings import settings
 from src.infrastructure.db.database import get_session
+
+# Dependencia de autenticación JWT reutilizable, compartida vía sward-shared.
+require_jwt = build_require_jwt(settings.secret_key, algorithm=settings.jwt_algorithm)
+
+# Validación entrante de service-key (modo dev permite sin claves configuradas).
+require_service_key = build_require_service_key(settings.authorized_service_keys_set)
 
 
 @lru_cache(maxsize=1)
