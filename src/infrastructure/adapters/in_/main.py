@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from scalar_fastapi import get_scalar_api_reference
 
 from src.infrastructure.adapters.in_.trazabilidad_router import router
 from src.infrastructure.config.settings import settings
@@ -21,7 +22,22 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="SWARD — Trazabilidad", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="SWARD — Microservicio de Trazabilidad",
+    version="0.1.0",
+    description=(
+        "Registra y consulta la trazabilidad de eventos de aprendizaje de los "
+        "estudiantes para auditoría y análisis dentro de SWARD."
+    ),
+    lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "Trazabilidad",
+            "description": "Registro y consulta de eventos de trazabilidad de aprendizaje.",
+        },
+        {"name": "Health", "description": "Sonda de estado del servicio."},
+    ],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
@@ -56,6 +72,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(router)
 
 
-@app.get("/health")
+@app.get("/scalar", include_in_schema=False)
+async def scalar_docs():
+    """Renderiza la referencia de API interactiva (Scalar) del servicio."""
+    return get_scalar_api_reference(openapi_url=app.openapi_url, title=app.title)
+
+
+@app.get("/health", tags=["Health"], summary="Estado del servicio")
 async def health():
+    """Devuelve el estado de salud del microservicio para sondas de liveness/readiness."""
     return {"status": "ok", "service": settings.service_name}
