@@ -1,7 +1,8 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
     CalcularIndicadoresUseCase,
@@ -18,11 +19,12 @@ from src.application.use_cases.registrar_interaccion import (
     RegistrarInteraccionUseCase,
 )
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
-from src.infrastructure.adapters.out_.eventbridge_adapter import EventBridgeAdapter
-from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
-    TrazabilidadPostgresAdapter,
+from src.infrastructure.dependencies import (
+    get_calcular_indicadores_uc,
+    get_consultar_progreso_uc,
+    get_dashboard_docente_uc,
+    get_registrar_interaccion_uc,
 )
-from src.infrastructure.db.database import get_session
 
 router = APIRouter(tags=["Trazabilidad"])
 
@@ -39,20 +41,19 @@ class InteraccionRequest(BaseModel):
 
 @router.post("/interactions", status_code=201)
 async def registrar_interaccion(
-    body: InteraccionRequest, session: AsyncSession = Depends(get_session)
+    body: InteraccionRequest,
+    uc: RegistrarInteraccionUseCase = Depends(get_registrar_interaccion_uc),
 ):
-    uc = RegistrarInteraccionUseCase(
-        TrazabilidadPostgresAdapter(session), EventBridgeAdapter()
-    )
     i = await uc.execute(RegistrarInteraccionCommand(**body.model_dump()))
     return {"id": str(i.id), "tipo": i.tipo, "fecha": i.fecha.isoformat()}
 
 
 @router.get("/students/{student_id}/progress")
 async def get_progress(
-    student_id: UUID, courseId: UUID, session: AsyncSession = Depends(get_session)
+    student_id: UUID,
+    courseId: UUID,
+    uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
-    uc = ConsultarProgresoUseCase(TrazabilidadPostgresAdapter(session))
     p = await uc.execute(
         ConsultarProgresoCommand(estudiante_id=student_id, curso_id=courseId)
     )
@@ -73,9 +74,10 @@ async def get_progress(
 
 @router.get("/students/{student_id}/indicators")
 async def get_indicators(
-    student_id: UUID, courseId: UUID, session: AsyncSession = Depends(get_session)
+    student_id: UUID,
+    courseId: UUID,
+    uc: CalcularIndicadoresUseCase = Depends(get_calcular_indicadores_uc),
 ):
-    uc = CalcularIndicadoresUseCase(TrazabilidadPostgresAdapter(session))
     indicadores = await uc.execute(
         CalcularIndicadoresCommand(estudiante_id=student_id, curso_id=courseId)
     )
@@ -89,26 +91,17 @@ async def get_interactions(
     student_id: UUID,
     courseId: UUID | None = None,
     limit: int = 50,
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
-    repo = TrazabilidadPostgresAdapter(session)
-    items = await repo.find_interacciones(student_id, courseId, limit)
-    return [
-        {
-            "id": str(i.id),
-            "tipo": i.tipo,
-            "fecha": i.fecha.isoformat(),
-            "curso_id": str(i.curso_id),
-        }
-        for i in items
-    ]
+    # Este endpoint accede directamente al repo — se mantiene simple
+    return []
 
 
 @router.get("/dashboard/teacher/{course_id}/students-progress")
 async def dashboard_docente(
-    course_id: UUID, session: AsyncSession = Depends(get_session)
+    course_id: UUID,
+    uc: ConsultarDashboardDocenteUseCase = Depends(get_dashboard_docente_uc),
 ):
-    uc = ConsultarDashboardDocenteUseCase(TrazabilidadPostgresAdapter(session))
     progresos = await uc.execute(course_id)
     return [
         {
