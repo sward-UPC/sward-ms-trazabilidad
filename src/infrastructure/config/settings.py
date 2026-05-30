@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     eventbridge_bus_name: str = "sward-event-bus"
     environment: str = "development"
     service_name: str = "sward-ms-trazabilidad"
+    cors_allowed_origins: list[str] = ["http://localhost:5173"]
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment == "development"
 
     # Autenticación JWT (token emitido por sward-ms-usuarios, HS256).
     secret_key: str = DEFAULT_SECRET_KEY
