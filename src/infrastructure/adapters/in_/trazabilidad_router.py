@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
@@ -32,13 +32,15 @@ router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 
 class InteraccionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     estudiante_id: UUID
     curso_id: UUID
     tipo: TipoInteraccion = TipoInteraccion.VISTA
     actividad_id: UUID | None = None
     recurso_id: UUID | None = None
     puntaje: float | None = None
-    moodle_event_id: str = ""
+    moodle_event_id: str = Field(default="", max_length=128)
 
 
 @router.post("/interactions", status_code=201)
@@ -92,7 +94,7 @@ async def get_indicators(
 async def get_interactions(
     student_id: UUID,
     courseId: UUID | None = None,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
     # Este endpoint accede directamente al repo — se mantiene simple
