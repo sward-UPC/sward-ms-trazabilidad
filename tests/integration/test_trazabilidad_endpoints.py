@@ -45,7 +45,7 @@ async def test_progress_sin_actividad(client):
         f"/students/{ESTUDIANTE}/progress", params={"courseId": CURSO}
     )
     assert resp.status_code == 200
-    assert resp.json()["sin_actividad"] is True
+    assert resp.json()["total_interacciones"] == 0
 
 
 @pytest.mark.asyncio
