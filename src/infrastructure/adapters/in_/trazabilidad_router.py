@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.application.use_cases.calcular_indicadores import (
@@ -266,7 +266,7 @@ async def registrar_interaccion(
     },
 )
 async def get_progress(
-    student_id: UUID = Field(..., description="UUID del estudiante"),
+    student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
@@ -321,7 +321,7 @@ async def get_progress(
     },
 )
 async def get_indicators(
-    student_id: UUID = Field(..., description="UUID del estudiante"),
+    student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: CalcularIndicadoresUseCase = Depends(get_calcular_indicadores_uc),
 ):
@@ -350,7 +350,7 @@ async def get_indicators(
     },
 )
 async def get_interactions(
-    student_id: UUID = Field(..., description="UUID del estudiante"),
+    student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID | None = Query(
         default=None,
         description="UUID del curso para filtrar interacciones (opcional)",
@@ -401,7 +401,7 @@ async def get_interactions(
     },
 )
 async def dashboard_docente(
-    course_id: UUID = Field(..., description="UUID del curso"),
+    course_id: UUID = Path(..., description="UUID del curso"),
     uc: ConsultarDashboardDocenteUseCase = Depends(get_dashboard_docente_uc),
 ):
     """Obtiene el dashboard de progreso de todos los estudiantes para un docente.
