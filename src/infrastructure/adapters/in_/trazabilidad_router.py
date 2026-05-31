@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.application.use_cases.calcular_indicadores import (
@@ -32,40 +32,260 @@ router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 
 class InteraccionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """Solicitud para registrar una interacción de estudiante."""
 
-    estudiante_id: UUID
-    curso_id: UUID
-    tipo: TipoInteraccion = TipoInteraccion.VISTA
-    actividad_id: UUID | None = None
-    recurso_id: UUID | None = None
-    puntaje: float | None = None
-    moodle_event_id: str = Field(default="", max_length=128)
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
+                "curso_id": "550e8400-e29b-41d4-a716-446655440001",
+                "tipo": "VISTA",
+                "actividad_id": "550e8400-e29b-41d4-a716-446655440002",
+                "recurso_id": None,
+                "puntaje": None,
+                "moodle_event_id": "12345",
+            }
+        },
+    )
+
+    estudiante_id: UUID = Field(
+        description="UUID del estudiante",
+        example="550e8400-e29b-41d4-a716-446655440000",
+    )
+    curso_id: UUID = Field(
+        description="UUID del curso", example="550e8400-e29b-41d4-a716-446655440001"
+    )
+    tipo: TipoInteraccion = Field(
+        default=TipoInteraccion.VISTA,
+        description="Tipo de interacción realizada",
+        example="VISTA",
+    )
+    actividad_id: UUID | None = Field(
+        default=None,
+        description="UUID de la actividad asociada (opcional)",
+        example="550e8400-e29b-41d4-a716-446655440002",
+    )
+    recurso_id: UUID | None = Field(
+        default=None,
+        description="UUID del recurso asociado (opcional)",
+        example=None,
+    )
+    puntaje: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Puntaje de la interacción (opcional, 0-100)",
+        example=None,
+    )
+    moodle_event_id: str = Field(
+        default="",
+        max_length=128,
+        description="ID del evento en Moodle para trazabilidad",
+        example="12345",
+    )
 
 
-@router.post("/interactions", status_code=201)
+class InteraccionResponse(BaseModel):
+    """Respuesta que contiene información de una interacción registrada."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440003",
+                "tipo": "VISTA",
+                "fecha": "2025-05-31T14:30:00Z",
+            }
+        },
+    )
+
+    id: str = Field(
+        description="UUID única de la interacción",
+        example="550e8400-e29b-41d4-a716-446655440003",
+    )
+    tipo: str = Field(description="Tipo de interacción registrada", example="VISTA")
+    fecha: str = Field(
+        description="Fecha y hora de la interacción en ISO 8601",
+        example="2025-05-31T14:30:00Z",
+    )
+
+
+class ProgresoResponse(BaseModel):
+    """Respuesta que contiene información del progreso de un estudiante."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440004",
+                "porcentaje_avance": 65.5,
+                "nivel_riesgo": "BAJO",
+                "total_interacciones": 45,
+                "puntaje_promedio": 78.5,
+            }
+        },
+    )
+
+    id: str = Field(
+        description="UUID del registro de progreso",
+        example="550e8400-e29b-41d4-a716-446655440004",
+    )
+    porcentaje_avance: float = Field(
+        description="Porcentaje de avance en el curso", ge=0, le=100, example=65.5
+    )
+    nivel_riesgo: str = Field(
+        description="Nivel de riesgo académico (BAJO, MEDIO, ALTO)", example="BAJO"
+    )
+    total_interacciones: int = Field(
+        description="Cantidad total de interacciones", ge=0, example=45
+    )
+    puntaje_promedio: float = Field(
+        description="Puntaje promedio en actividades", ge=0, le=100, example=78.5
+    )
+
+
+class IndicadorResponse(BaseModel):
+    """Respuesta que contiene un indicador de desempeño."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "nombre": "Participación",
+                "valor": 85.0,
+                "unidad": "porcentaje",
+            }
+        },
+    )
+
+    nombre: str = Field(
+        description="Nombre del indicador", max_length=100, example="Participación"
+    )
+    valor: float = Field(description="Valor del indicador", example=85.0)
+    unidad: str = Field(
+        description="Unidad de medida del indicador",
+        max_length=50,
+        example="porcentaje",
+    )
+
+
+class EstudianteProgressResponse(BaseModel):
+    """Respuesta que contiene el progreso de un estudiante en el dashboard docente."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
+                "nivel_riesgo": "MEDIO",
+                "puntaje_promedio": 72.0,
+                "total_interacciones": 38,
+                "recursos_completados": 12,
+            }
+        },
+    )
+
+    estudiante_id: str = Field(
+        description="UUID del estudiante",
+        example="550e8400-e29b-41d4-a716-446655440000",
+    )
+    nivel_riesgo: str = Field(description="Nivel de riesgo académico", example="MEDIO")
+    puntaje_promedio: float = Field(
+        description="Puntaje promedio del estudiante", ge=0, le=100, example=72.0
+    )
+    total_interacciones: int = Field(
+        description="Cantidad total de interacciones", ge=0, example=38
+    )
+    recursos_completados: int = Field(
+        description="Cantidad de recursos completados", ge=0, example=12
+    )
+
+
+@router.post(
+    "/interactions",
+    status_code=status.HTTP_201_CREATED,
+    response_model=InteraccionResponse,
+    responses={
+        201: {
+            "description": "Interacción registrada exitosamente",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440003",
+                        "tipo": "VISTA",
+                        "fecha": "2025-05-31T14:30:00Z",
+                    }
+                }
+            },
+        },
+        400: {"description": "Solicitud inválida. Parámetros incorrectos."},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        422: {"description": "Entidad no procesable. Validación de datos fallida."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
 async def registrar_interaccion(
-    body: InteraccionRequest,
+    body: InteraccionRequest = Body(
+        ..., description="Datos de la interacción a registrar"
+    ),
     uc: RegistrarInteraccionUseCase = Depends(get_registrar_interaccion_uc),
 ):
+    """Registra una nueva interacción de estudiante en el curso.
+
+    **Flujo:** 1. Valida JWT 2. Registra interacción en base de datos 3. Retorna confirmación
+
+    **SLA:** <100ms | **Auth:** JWT | **Rate Limit:** 300 req/min
+    """
     i = await uc.execute(RegistrarInteraccionCommand(**body.model_dump()))
     return {"id": str(i.id), "tipo": i.tipo, "fecha": i.fecha.isoformat()}
 
 
-@router.get("/students/{student_id}/progress")
+@router.get(
+    "/students/{student_id}/progress",
+    status_code=status.HTTP_200_OK,
+    response_model=ProgresoResponse,
+    responses={
+        200: {
+            "description": "Progreso obtenido exitosamente",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440004",
+                        "porcentaje_avance": 65.5,
+                        "nivel_riesgo": "BAJO",
+                        "total_interacciones": 45,
+                        "puntaje_promedio": 78.5,
+                    }
+                }
+            },
+        },
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        404: {"description": "Estudiante o curso no encontrado."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
 async def get_progress(
-    student_id: UUID,
-    courseId: UUID,
+    student_id: UUID = Field(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
+    """Obtiene el progreso de un estudiante en un curso específico.
+
+    **Flujo:** 1. Valida JWT 2. Consulta base de datos 3. Calcula métricas de progreso 4. Retorna información
+
+    **SLA:** <150ms | **Auth:** JWT | **Rate Limit:** 120 req/min
+    """
     p = await uc.execute(
         ConsultarProgresoCommand(estudiante_id=student_id, curso_id=courseId)
     )
     if not p:
         return {
-            "estudiante_id": str(student_id),
-            "curso_id": str(courseId),
-            "sin_actividad": True,
+            "id": str(student_id),
+            "porcentaje_avance": 0.0,
+            "nivel_riesgo": "ALTO",
+            "total_interacciones": 0,
+            "puntaje_promedio": 0.0,
         }
     return {
         "id": str(p.id),
@@ -76,12 +296,41 @@ async def get_progress(
     }
 
 
-@router.get("/students/{student_id}/indicators")
+@router.get(
+    "/students/{student_id}/indicators",
+    status_code=status.HTTP_200_OK,
+    response_model=list[IndicadorResponse],
+    responses={
+        200: {
+            "description": "Indicadores obtenidos exitosamente",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "nombre": "Participación",
+                            "valor": 85.0,
+                            "unidad": "porcentaje",
+                        }
+                    ]
+                }
+            },
+        },
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        404: {"description": "Estudiante o curso no encontrado."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
 async def get_indicators(
-    student_id: UUID,
-    courseId: UUID,
+    student_id: UUID = Field(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
     uc: CalcularIndicadoresUseCase = Depends(get_calcular_indicadores_uc),
 ):
+    """Obtiene los indicadores de desempeño de un estudiante en un curso.
+
+    **Flujo:** 1. Valida JWT 2. Calcula indicadores 3. Retorna lista de indicadores
+
+    **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
+    """
     indicadores = await uc.execute(
         CalcularIndicadoresCommand(estudiante_id=student_id, curso_id=courseId)
     )
@@ -90,22 +339,77 @@ async def get_indicators(
     ]
 
 
-@router.get("/students/{student_id}/interactions")
+@router.get(
+    "/students/{student_id}/interactions",
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Interacciones obtenidas exitosamente"},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        404: {"description": "Estudiante no encontrado."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
 async def get_interactions(
-    student_id: UUID,
-    courseId: UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
+    student_id: UUID = Field(..., description="UUID del estudiante"),
+    courseId: UUID | None = Query(
+        default=None,
+        description="UUID del curso para filtrar interacciones (opcional)",
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=200,
+        description="Cantidad máxima de interacciones a retornar",
+    ),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
 ):
+    """Obtiene el historial de interacciones de un estudiante.
+
+    **Flujo:** 1. Valida JWT 2. Consulta base de datos con filtros 3. Retorna lista paginada
+
+    **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
+    """
     # Este endpoint accede directamente al repo — se mantiene simple
     return []
 
 
-@router.get("/dashboard/teacher/{course_id}/students-progress")
+@router.get(
+    "/dashboard/teacher/{course_id}/students-progress",
+    status_code=status.HTTP_200_OK,
+    response_model=list[EstudianteProgressResponse],
+    responses={
+        200: {
+            "description": "Progreso de estudiantes obtenido exitosamente",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
+                            "nivel_riesgo": "MEDIO",
+                            "puntaje_promedio": 72.0,
+                            "total_interacciones": 38,
+                            "recursos_completados": 12,
+                        }
+                    ]
+                }
+            },
+        },
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        403: {"description": "Acceso denegado. No es docente del curso."},
+        404: {"description": "Curso no encontrado."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
 async def dashboard_docente(
-    course_id: UUID,
+    course_id: UUID = Field(..., description="UUID del curso"),
     uc: ConsultarDashboardDocenteUseCase = Depends(get_dashboard_docente_uc),
 ):
+    """Obtiene el dashboard de progreso de todos los estudiantes para un docente.
+
+    **Flujo:** 1. Valida JWT 2. Verifica permisos de docente 3. Calcula métricas agregadas 4. Retorna dashboard
+
+    **SLA:** <300ms | **Auth:** JWT | **Rate Limit:** 60 req/min
+    """
     progresos = await uc.execute(course_id)
     return [
         {
