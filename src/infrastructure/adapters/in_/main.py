@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,10 +15,22 @@ from src.infrastructure.db.models.trazabilidad_models import Base
 logger = logging.getLogger(__name__)
 
 
+async def _init_db() -> None:
+    for intento in range(10):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Base de datos lista.")
+            return
+        except Exception as exc:
+            logger.warning("BD no disponible (intento %d/10): %s", intento + 1, exc)
+            await asyncio.sleep(5)
+    logger.error("No se pudo conectar a la BD tras 10 intentos.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    asyncio.create_task(_init_db())
     yield
     await engine.dispose()
 
