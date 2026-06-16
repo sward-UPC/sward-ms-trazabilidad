@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SWARD — Microservicio de Trazabilidad",
     version="0.1.0",
+    openapi_url="/interactions/openapi.json",
     description=(
         "Registra y consulta la trazabilidad de eventos de aprendizaje de los "
         "estudiantes para auditoría y análisis dentro de SWARD."
