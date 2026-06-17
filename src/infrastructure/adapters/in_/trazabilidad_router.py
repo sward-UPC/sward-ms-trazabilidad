@@ -152,7 +152,8 @@ class ProgresoResponse(BaseModel):
         description="Porcentaje de avance en el curso", ge=0, le=100, example=65.5
     )
     nivel_riesgo: str = Field(
-        description="Nivel de riesgo académico (bajo, medio, alto, critico)", example="bajo"
+        description="Nivel de riesgo académico (bajo, medio, alto, critico)",
+        example="bajo",
     )
     total_interacciones: int = Field(
         description="Cantidad total de interacciones", ge=0, example=45
