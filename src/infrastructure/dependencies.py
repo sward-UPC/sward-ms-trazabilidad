@@ -52,3 +52,9 @@ def get_dashboard_docente_uc(
     session: AsyncSession = Depends(get_session),
 ) -> ConsultarDashboardDocenteUseCase:
     return ConsultarDashboardDocenteUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_trazabilidad_repo(
+    session: AsyncSession = Depends(get_session),
+) -> TrazabilidadPostgresAdapter:
+    return TrazabilidadPostgresAdapter(session)
