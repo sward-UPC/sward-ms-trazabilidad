@@ -1,7 +1,10 @@
+import uuid as _uuid
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
@@ -19,13 +22,27 @@ from src.application.use_cases.registrar_interaccion import (
     RegistrarInteraccionUseCase,
 )
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
+from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
+    TrazabilidadPostgresAdapter,
+)
+from src.infrastructure.db.database import get_session
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
     get_dashboard_docente_uc,
     get_registrar_interaccion_uc,
+    get_trazabilidad_repo,
     require_jwt,
+    require_service_key,
 )
+
+# Namespace fijo para derivar UUIDs determinísticos desde IDs de Moodle.
+MOODLE_NS = _uuid.UUID("a9f3e7b5-1234-5678-abcd-ef0123456789")
+
+
+def _moodle_id(entity_type: str, moodle_id: str) -> _uuid.UUID:
+    return _uuid.uuid5(MOODLE_NS, f"{entity_type}:{moodle_id}")
+
 
 # Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
 router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
@@ -361,7 +378,7 @@ async def get_interactions(
         le=200,
         description="Cantidad máxima de interacciones a retornar",
     ),
-    uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
+    repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
 ):
     """Obtiene el historial de interacciones de un estudiante.
 
@@ -369,8 +386,94 @@ async def get_interactions(
 
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
-    # Este endpoint accede directamente al repo — se mantiene simple
-    return []
+    items = await repo.find_interacciones(student_id, courseId, limit)
+    return [
+        {
+            "id": str(i.id),
+            "actividad_id": str(i.actividad_id) if i.actividad_id else None,
+            "tipo": i.tipo.value,
+            "fecha": i.fecha.isoformat(),
+            "curso_id": str(i.curso_id),
+        }
+        for i in items
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Schemas para el endpoint interno de sincronización LMS
+# ---------------------------------------------------------------------------
+
+
+class LmsInteraccionItem(BaseModel):
+    moodle_user_id: str
+    moodle_course_id: str
+    moodle_activity_id: str
+    es_correcta: bool = False
+    fecha_evento: datetime
+    moodle_event_id: str = ""
+
+
+class LmsSyncRequest(BaseModel):
+    interacciones: list[LmsInteraccionItem]
+
+
+# Router interno: autenticación por service-key (sin JWT de usuario).
+internal_router = APIRouter(
+    tags=["LMS — Interno"], dependencies=[Depends(require_service_key)]
+)
+
+
+@internal_router.post("/internal/lms-sync", status_code=202)
+async def lms_sync(
+    body: LmsSyncRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Recibe interacciones desde ms-integracion-lms y las persiste.
+
+    Convierte los IDs numéricos de Moodle a UUIDs determinísticos (uuid5) y
+    realiza deduplicación por ``moodle_event_id``.
+
+    **Auth:** X-Service-Key | **Idempotente:** sí (omite eventos ya procesados)
+    """
+    from sqlalchemy import select as sa_select
+
+    from src.domain.value_objects.nivel_riesgo import TipoInteraccion
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    procesadas = 0
+    omitidas = 0
+    for item in body.interacciones:
+        if item.moodle_event_id:
+            exists = (
+                await session.execute(
+                    sa_select(InteraccionModel.id)
+                    .where(InteraccionModel.moodle_event_id == item.moodle_event_id)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if exists:
+                omitidas += 1
+                continue
+
+        tipo = TipoInteraccion.COMPLETADO if item.es_correcta else TipoInteraccion.VISTA
+        fecha = (
+            item.fecha_evento
+            if item.fecha_evento.tzinfo
+            else item.fecha_evento.replace(tzinfo=timezone.utc)
+        )
+        m = InteraccionModel(
+            estudiante_id=_moodle_id("user", item.moodle_user_id),
+            curso_id=_moodle_id("course", item.moodle_course_id),
+            actividad_id=_moodle_id("activity", item.moodle_activity_id),
+            tipo=tipo.value,
+            fecha=fecha,
+            moodle_event_id=item.moodle_event_id,
+        )
+        session.add(m)
+        procesadas += 1
+
+    await session.commit()
+    return {"procesadas": procesadas, "omitidas": omitidas}
 
 
 @router.get(
