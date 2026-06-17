@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from scalar_fastapi import get_scalar_api_reference
 
-from src.infrastructure.adapters.in_.trazabilidad_router import router
+from src.infrastructure.adapters.in_.trazabilidad_router import internal_router, router
 from src.infrastructure.config.settings import settings
 from src.infrastructure.db.database import engine
 from src.infrastructure.db.models.trazabilidad_models import Base
@@ -84,6 +84,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 app.include_router(router)
+app.include_router(internal_router)
 
 
 @app.get("/scalar", include_in_schema=False)
