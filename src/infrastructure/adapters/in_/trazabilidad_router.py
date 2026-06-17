@@ -57,7 +57,7 @@ class InteraccionRequest(BaseModel):
             "example": {
                 "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
                 "curso_id": "550e8400-e29b-41d4-a716-446655440001",
-                "tipo": "VISTA",
+                "tipo": "vista",
                 "actividad_id": "550e8400-e29b-41d4-a716-446655440002",
                 "recurso_id": None,
                 "puntaje": None,
@@ -76,7 +76,7 @@ class InteraccionRequest(BaseModel):
     tipo: TipoInteraccion = Field(
         default=TipoInteraccion.VISTA,
         description="Tipo de interacción realizada",
-        example="VISTA",
+        example="vista",
     )
     actividad_id: UUID | None = Field(
         default=None,
@@ -111,7 +111,7 @@ class InteraccionResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440003",
-                "tipo": "VISTA",
+                "tipo": "vista",
                 "fecha": "2025-05-31T14:30:00Z",
             }
         },
@@ -121,7 +121,7 @@ class InteraccionResponse(BaseModel):
         description="UUID única de la interacción",
         example="550e8400-e29b-41d4-a716-446655440003",
     )
-    tipo: str = Field(description="Tipo de interacción registrada", example="VISTA")
+    tipo: str = Field(description="Tipo de interacción registrada", example="vista")
     fecha: str = Field(
         description="Fecha y hora de la interacción en ISO 8601",
         example="2025-05-31T14:30:00Z",
@@ -137,7 +137,7 @@ class ProgresoResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440004",
                 "porcentaje_avance": 65.5,
-                "nivel_riesgo": "BAJO",
+                "nivel_riesgo": "bajo",
                 "total_interacciones": 45,
                 "puntaje_promedio": 78.5,
             }
@@ -152,7 +152,8 @@ class ProgresoResponse(BaseModel):
         description="Porcentaje de avance en el curso", ge=0, le=100, example=65.5
     )
     nivel_riesgo: str = Field(
-        description="Nivel de riesgo académico (BAJO, MEDIO, ALTO)", example="BAJO"
+        description="Nivel de riesgo académico (bajo, medio, alto, critico)",
+        example="bajo",
     )
     total_interacciones: int = Field(
         description="Cantidad total de interacciones", ge=0, example=45
@@ -195,7 +196,7 @@ class EstudianteProgressResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
-                "nivel_riesgo": "MEDIO",
+                "nivel_riesgo": "medio",
                 "puntaje_promedio": 72.0,
                 "total_interacciones": 38,
                 "recursos_completados": 12,
@@ -207,7 +208,7 @@ class EstudianteProgressResponse(BaseModel):
         description="UUID del estudiante",
         example="550e8400-e29b-41d4-a716-446655440000",
     )
-    nivel_riesgo: str = Field(description="Nivel de riesgo académico", example="MEDIO")
+    nivel_riesgo: str = Field(description="Nivel de riesgo académico", example="medio")
     puntaje_promedio: float = Field(
         description="Puntaje promedio del estudiante", ge=0, le=100, example=72.0
     )
@@ -230,7 +231,7 @@ class EstudianteProgressResponse(BaseModel):
                 "application/json": {
                     "example": {
                         "id": "550e8400-e29b-41d4-a716-446655440003",
-                        "tipo": "VISTA",
+                        "tipo": "vista",
                         "fecha": "2025-05-31T14:30:00Z",
                     }
                 }
@@ -270,7 +271,7 @@ async def registrar_interaccion(
                     "example": {
                         "id": "550e8400-e29b-41d4-a716-446655440004",
                         "porcentaje_avance": 65.5,
-                        "nivel_riesgo": "BAJO",
+                        "nivel_riesgo": "bajo",
                         "total_interacciones": 45,
                         "puntaje_promedio": 78.5,
                     }
@@ -300,7 +301,7 @@ async def get_progress(
         return {
             "id": str(student_id),
             "porcentaje_avance": 0.0,
-            "nivel_riesgo": "ALTO",
+            "nivel_riesgo": "alto",
             "total_interacciones": 0,
             "puntaje_promedio": 0.0,
         }
@@ -504,7 +505,7 @@ async def get_interactions_internal(
                     "example": [
                         {
                             "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
-                            "nivel_riesgo": "MEDIO",
+                            "nivel_riesgo": "medio",
                             "puntaje_promedio": 72.0,
                             "total_interacciones": 38,
                             "recursos_completados": 12,
