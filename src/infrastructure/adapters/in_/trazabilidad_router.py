@@ -356,6 +356,25 @@ async def get_indicators(
     ]
 
 
+async def _get_interactions_handler(
+    student_id: UUID,
+    courseId: UUID | None,
+    limit: int,
+    repo: TrazabilidadPostgresAdapter,
+) -> list[dict]:
+    items = await repo.find_interacciones(student_id, courseId, limit)
+    return [
+        {
+            "id": str(i.id),
+            "actividad_id": str(i.actividad_id) if i.actividad_id else None,
+            "tipo": i.tipo.value,
+            "fecha": i.fecha.isoformat(),
+            "curso_id": str(i.curso_id),
+        }
+        for i in items
+    ]
+
+
 @router.get(
     "/students/{student_id}/interactions",
     status_code=status.HTTP_200_OK,
@@ -368,35 +387,32 @@ async def get_indicators(
 )
 async def get_interactions(
     student_id: UUID = Path(..., description="UUID del estudiante"),
-    courseId: UUID | None = Query(
-        default=None,
-        description="UUID del curso para filtrar interacciones (opcional)",
-    ),
-    limit: int = Query(
-        default=50,
-        ge=1,
-        le=200,
-        description="Cantidad máxima de interacciones a retornar",
-    ),
+    courseId: UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
     repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
 ):
-    """Obtiene el historial de interacciones de un estudiante.
-
-    **Flujo:** 1. Valida JWT 2. Consulta base de datos con filtros 3. Retorna lista paginada
+    """Obtiene el historial de interacciones de un estudiante (auth JWT).
 
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
-    items = await repo.find_interacciones(student_id, courseId, limit)
-    return [
-        {
-            "id": str(i.id),
-            "actividad_id": str(i.actividad_id) if i.actividad_id else None,
-            "tipo": i.tipo.value,
-            "fecha": i.fecha.isoformat(),
-            "curso_id": str(i.curso_id),
-        }
-        for i in items
-    ]
+    return await _get_interactions_handler(student_id, courseId, limit, repo)
+
+
+@internal_router.get(
+    "/internal/students/{student_id}/interactions",
+    status_code=status.HTTP_200_OK,
+)
+async def get_interactions_internal(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
+):
+    """Obtiene interacciones de un estudiante (auth service-key, s2s).
+
+    Usado por ms-recomendacion para construir la secuencia SAKT.
+    """
+    return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
 # ---------------------------------------------------------------------------
