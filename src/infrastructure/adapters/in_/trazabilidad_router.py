@@ -398,23 +398,6 @@ async def get_interactions(
     return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
-@internal_router.get(
-    "/internal/students/{student_id}/interactions",
-    status_code=status.HTTP_200_OK,
-)
-async def get_interactions_internal(
-    student_id: UUID = Path(..., description="UUID del estudiante"),
-    courseId: UUID | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
-):
-    """Obtiene interacciones de un estudiante (auth service-key, s2s).
-
-    Usado por ms-recomendacion para construir la secuencia SAKT.
-    """
-    return await _get_interactions_handler(student_id, courseId, limit, repo)
-
-
 # ---------------------------------------------------------------------------
 # Schemas para el endpoint interno de sincronización LMS
 # ---------------------------------------------------------------------------
@@ -490,6 +473,23 @@ async def lms_sync(
 
     await session.commit()
     return {"procesadas": procesadas, "omitidas": omitidas}
+
+
+@internal_router.get(
+    "/internal/students/{student_id}/interactions",
+    status_code=status.HTTP_200_OK,
+)
+async def get_interactions_internal(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
+):
+    """Obtiene interacciones de un estudiante (auth service-key, s2s).
+
+    Usado por ms-recomendacion para construir la secuencia SAKT.
+    """
+    return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
 @router.get(
