@@ -45,3 +45,7 @@ class TrazabilidadRepositoryPort(ABC):
 
     @abstractmethod
     async def find_historial_curso(self, curso_id: UUID) -> list[ProgresoHistorial]: ...
+    @abstractmethod
+    async def contar_conceptos_en_riesgo(self, curso_id: UUID) -> dict[str, int]:
+        """Por estudiante (str(uuid)): nº de conceptos con tasa de acierto < 0.5."""
+        ...

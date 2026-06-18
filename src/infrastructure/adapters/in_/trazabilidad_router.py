@@ -245,6 +245,17 @@ class EstudianteProgressResponse(BaseModel):
         description="Índice de engagement (actividad de los últimos 30 días)",
         example=60,
     )
+    conceptos_en_riesgo: int = Field(
+        default=0,
+        ge=0,
+        description="Nº de conceptos (secciones) con tasa de acierto < 0.5",
+        example=2,
+    )
+    ultima_actividad: str = Field(
+        default="",
+        description="Fecha/hora de la última actividad (ISO 8601)",
+        example="2026-06-18T12:00:00Z",
+    )
 
 
 @router.post(
@@ -574,6 +585,12 @@ async def dashboard_docente(
             "total_interacciones": e.progreso.total_interacciones,
             "recursos_completados": e.progreso.recursos_completados,
             "engagement": e.engagement,
+            "conceptos_en_riesgo": e.conceptos_en_riesgo,
+            "ultima_actividad": (
+                e.progreso.ultima_actividad.isoformat()
+                if e.progreso.ultima_actividad
+                else ""
+            ),
         }
         for e in estudiantes
     ]
