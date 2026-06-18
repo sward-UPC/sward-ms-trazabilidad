@@ -106,3 +106,59 @@ async def test_dashboard_docente_lista_progreso_del_curso(client):
     assert progresos[0]["nivel_riesgo"] == "critico"
     estudiantes = {p["estudiante_id"] for p in progresos}
     assert estudiantes == {est_a, est_b}
+    # El dashboard se enriquece con nombre/correo vía s2s a ms-usuarios.
+    assert all(p["nombre"] for p in progresos)
+    assert all("@upc.edu.pe" in p["correo"] for p in progresos)
+
+
+@pytest.mark.asyncio
+async def test_reporte_docente_genera_pdf(client):
+    curso = str(uuid4())
+    await client.post(
+        INTERACTIONS,
+        json={
+            "estudiante_id": str(uuid4()),
+            "curso_id": curso,
+            "tipo": "respuesta",
+            "puntaje": 65.0,
+        },
+    )
+
+    resp = await client.get(f"/dashboard/teacher/{curso}/report")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "attachment" in resp.headers["content-disposition"]
+    # Un PDF válido empieza con la firma %PDF.
+    assert resp.content[:4] == b"%PDF"
+    assert len(resp.content) > 1000  # contenido real, no vacío
+
+
+@pytest.mark.asyncio
+async def test_registrar_feedback_docente(client):
+    resp = await client.post(
+        "/dashboard/teacher/feedback",
+        json={
+            "estudiante_id": str(uuid4()),
+            "curso_id": str(uuid4()),
+            "mensaje": "Buen avance, sigue reforzando fracciones.",
+            "tipo": "encouragement",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["tipo"] == "encouragement"
+    assert body["id"]
+
+
+@pytest.mark.asyncio
+async def test_registrar_feedback_tipo_invalido_es_422(client):
+    resp = await client.post(
+        "/dashboard/teacher/feedback",
+        json={
+            "estudiante_id": str(uuid4()),
+            "curso_id": str(uuid4()),
+            "mensaje": "x",
+            "tipo": "no-existe",
+        },
+    )
+    assert resp.status_code == 422

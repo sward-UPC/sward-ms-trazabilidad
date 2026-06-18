@@ -9,11 +9,17 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
+from src.application.use_cases.generar_reporte_docente import (
+    GenerarReporteDocenteUseCase,
+)
+from src.application.use_cases.registrar_feedback import RegistrarFeedbackUseCase
 from src.application.use_cases.registrar_interaccion import RegistrarInteraccionUseCase
 from src.infrastructure.adapters.out_.eventbridge_adapter import EventBridgeAdapter
+from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
 )
+from src.infrastructure.adapters.out_.usuarios_rest_adapter import UsuariosRestAdapter
 from src.infrastructure.config.settings import settings
 from src.infrastructure.db.database import get_session
 
@@ -51,7 +57,24 @@ def get_calcular_indicadores_uc(
 def get_dashboard_docente_uc(
     session: AsyncSession = Depends(get_session),
 ) -> ConsultarDashboardDocenteUseCase:
-    return ConsultarDashboardDocenteUseCase(TrazabilidadPostgresAdapter(session))
+    return ConsultarDashboardDocenteUseCase(
+        TrazabilidadPostgresAdapter(session), UsuariosRestAdapter()
+    )
+
+
+def get_generar_reporte_docente_uc(
+    session: AsyncSession = Depends(get_session),
+) -> GenerarReporteDocenteUseCase:
+    dashboard_uc = ConsultarDashboardDocenteUseCase(
+        TrazabilidadPostgresAdapter(session), UsuariosRestAdapter()
+    )
+    return GenerarReporteDocenteUseCase(dashboard_uc, PdfReporteRenderer())
+
+
+def get_registrar_feedback_uc(
+    session: AsyncSession = Depends(get_session),
+) -> RegistrarFeedbackUseCase:
+    return RegistrarFeedbackUseCase(TrazabilidadPostgresAdapter(session))
 
 
 def get_trazabilidad_repo(

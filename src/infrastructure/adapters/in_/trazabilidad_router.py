@@ -1,8 +1,10 @@
 import uuid as _uuid
 from datetime import datetime, timezone
+from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,13 @@ from src.application.use_cases.consultar_progreso import (
     ConsultarProgresoCommand,
     ConsultarProgresoUseCase,
 )
+from src.application.use_cases.generar_reporte_docente import (
+    GenerarReporteDocenteUseCase,
+)
+from src.application.use_cases.registrar_feedback import (
+    RegistrarFeedbackCommand,
+    RegistrarFeedbackUseCase,
+)
 from src.application.use_cases.registrar_interaccion import (
     RegistrarInteraccionCommand,
     RegistrarInteraccionUseCase,
@@ -30,6 +39,8 @@ from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
     get_dashboard_docente_uc,
+    get_generar_reporte_docente_uc,
+    get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     get_trazabilidad_repo,
     require_jwt,
@@ -196,6 +207,9 @@ class EstudianteProgressResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "estudiante_id": "550e8400-e29b-41d4-a716-446655440000",
+                "nombre": "Ana",
+                "apellido": "Quispe",
+                "correo": "ana.quispe@upc.edu.pe",
                 "nivel_riesgo": "medio",
                 "puntaje_promedio": 72.0,
                 "total_interacciones": 38,
@@ -207,6 +221,15 @@ class EstudianteProgressResponse(BaseModel):
     estudiante_id: str = Field(
         description="UUID del estudiante",
         example="550e8400-e29b-41d4-a716-446655440000",
+    )
+    nombre: str = Field(default="", description="Nombre del estudiante", example="Ana")
+    apellido: str = Field(
+        default="", description="Apellido del estudiante", example="Quispe"
+    )
+    correo: str = Field(
+        default="",
+        description="Correo institucional del estudiante",
+        example="ana.quispe@upc.edu.pe",
     )
     nivel_riesgo: str = Field(description="Nivel de riesgo académico", example="medio")
     puntaje_promedio: float = Field(
@@ -530,14 +553,111 @@ async def dashboard_docente(
 
     **SLA:** <300ms | **Auth:** JWT | **Rate Limit:** 60 req/min
     """
-    progresos = await uc.execute(course_id)
+    estudiantes = await uc.execute(course_id)
     return [
         {
-            "estudiante_id": str(p.estudiante_id),
-            "nivel_riesgo": p.nivel_riesgo,
-            "puntaje_promedio": p.puntaje_promedio,
-            "total_interacciones": p.total_interacciones,
-            "recursos_completados": p.recursos_completados,
+            "estudiante_id": str(e.progreso.estudiante_id),
+            "nombre": e.nombre,
+            "apellido": e.apellido,
+            "correo": e.correo,
+            "nivel_riesgo": e.progreso.nivel_riesgo,
+            "puntaje_promedio": e.progreso.puntaje_promedio,
+            "total_interacciones": e.progreso.total_interacciones,
+            "recursos_completados": e.progreso.recursos_completados,
         }
-        for p in progresos
+        for e in estudiantes
     ]
+
+
+@router.get(
+    "/dashboard/teacher/{course_id}/report",
+    responses={
+        200: {
+            "description": "Reporte PDF del progreso de la clase",
+            "content": {"application/pdf": {}},
+        },
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        404: {"description": "Curso no encontrado."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
+async def reporte_docente_pdf(
+    course_id: UUID = Path(..., description="UUID del curso"),
+    uc: GenerarReporteDocenteUseCase = Depends(get_generar_reporte_docente_uc),
+) -> StreamingResponse:
+    """Genera y descarga el reporte de progreso de la clase en PDF.
+
+    El PDF incluye cabecera SWARD, un resumen agregado por nivel de riesgo y el
+    detalle por estudiante (nombre, correo, riesgo, dominio, interacciones).
+
+    **Auth:** JWT | **Content-Type:** application/pdf
+    """
+    pdf = await uc.execute(course_id)
+    filename = f"reporte_clase_{course_id}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class FeedbackRequest(BaseModel):
+    """Retroalimentación del docente hacia un estudiante."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    estudiante_id: UUID = Field(description="UUID del estudiante destinatario")
+    curso_id: UUID = Field(description="UUID del curso")
+    mensaje: str = Field(
+        min_length=1, max_length=1000, description="Mensaje de retroalimentación"
+    )
+    tipo: str = Field(
+        default="general",
+        pattern="^(encouragement|correction|resource|general)$",
+        description="Tipo de retroalimentación",
+    )
+
+
+class FeedbackResponse(BaseModel):
+    id: str
+    estudiante_id: str
+    tipo: str
+    created_at: datetime
+
+
+@router.post(
+    "/dashboard/teacher/feedback",
+    status_code=status.HTTP_201_CREATED,
+    response_model=FeedbackResponse,
+    responses={
+        201: {"description": "Retroalimentación registrada"},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        422: {"description": "Datos inválidos."},
+    },
+)
+async def registrar_feedback(
+    body: FeedbackRequest,
+    user: dict = Depends(require_jwt),
+    uc: RegistrarFeedbackUseCase = Depends(get_registrar_feedback_uc),
+) -> FeedbackResponse:
+    """Registra retroalimentación del docente autenticado hacia un estudiante.
+
+    El `docente_id` se toma del JWT (claim `sub`), no del body.
+
+    **Auth:** JWT (docente)
+    """
+    feedback = await uc.execute(
+        RegistrarFeedbackCommand(
+            docente_id=UUID(user["sub"]),
+            estudiante_id=body.estudiante_id,
+            curso_id=body.curso_id,
+            mensaje=body.mensaje,
+            tipo=body.tipo,
+        )
+    )
+    return FeedbackResponse(
+        id=str(feedback.id),
+        estudiante_id=str(feedback.estudiante_id),
+        tipo=feedback.tipo,
+        created_at=feedback.created_at,
+    )
