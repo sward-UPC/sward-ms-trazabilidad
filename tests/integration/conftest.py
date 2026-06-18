@@ -109,6 +109,22 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
     async def find_historial_curso(self, curso_id):
         return [h for h in self.historial if h.curso_id == curso_id]
 
+    async def contar_conceptos_en_riesgo(self, curso_id):
+        agg: dict[str, dict[str, list[int]]] = {}
+        for i in self.interacciones:
+            cid = getattr(i, "concept_id", None)
+            ic = getattr(i, "is_correct", None)
+            if i.curso_id == curso_id and cid and ic is not None:
+                a = agg.setdefault(str(i.estudiante_id), {}).setdefault(cid, [0, 0])
+                a[1] += 1
+                a[0] += 1 if ic else 0
+        counts: dict[str, int] = {}
+        for est, conceptos in agg.items():
+            n = sum(1 for cor, tot in conceptos.values() if tot and cor / tot < 0.5)
+            if n:
+                counts[est] = n
+        return counts
+
 
 class _FakeUsuariosClient(UsuariosClientPort):
     """Simula ms-usuarios: enriquece cualquier UUID con un perfil sintético."""
