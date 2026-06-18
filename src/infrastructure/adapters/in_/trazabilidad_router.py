@@ -536,6 +536,32 @@ async def get_interactions_internal(
     return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
+@internal_router.get("/internal/metrics/platform", status_code=status.HTTP_200_OK)
+async def get_platform_metrics(
+    session: AsyncSession = Depends(get_session),
+):
+    """Métricas agregadas de toda la plataforma (s2s, auth service-key).
+
+    Usado por ms-usuarios para el KPI "Dominio Plataforma" del panel admin.
+    Promedia ``puntaje_promedio`` sobre todos los progresos académicos.
+    """
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import ProgresoModel
+
+    avg = (
+        await session.execute(sa_select(sa_func.avg(ProgresoModel.puntaje_promedio)))
+    ).scalar()
+    total = (
+        await session.execute(sa_select(sa_func.count()).select_from(ProgresoModel))
+    ).scalar_one()
+    return {
+        "dominio_promedio": round(float(avg), 1) if avg is not None else None,
+        "estudiantes_con_progreso": int(total),
+    }
+
+
 @router.get(
     "/dashboard/teacher/{course_id}/students-progress",
     status_code=status.HTTP_200_OK,
