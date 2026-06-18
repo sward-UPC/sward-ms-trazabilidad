@@ -12,6 +12,17 @@ class IndicadorTrazabilidad:
 
 
 @dataclass
+class ProgresoHistorial:
+    """Punto histórico del progreso de un estudiante (para series temporales)."""
+
+    estudiante_id: UUID
+    curso_id: UUID
+    nivel_riesgo: NivelRiesgo
+    puntaje_promedio: float
+    registrado_en: datetime
+
+
+@dataclass
 class ProgresoAcademico:
     id: UUID = field(default_factory=uuid4)
     estudiante_id: UUID = field(default_factory=uuid4)

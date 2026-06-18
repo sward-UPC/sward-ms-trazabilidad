@@ -19,6 +19,7 @@ from src.application.use_cases.consultar_progreso import (
     ConsultarProgresoCommand,
     ConsultarProgresoUseCase,
 )
+from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -38,6 +39,7 @@ from src.infrastructure.db.database import get_session
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
+    get_consultar_tendencia_uc,
     get_dashboard_docente_uc,
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
@@ -240,6 +242,13 @@ class EstudianteProgressResponse(BaseModel):
     )
     recursos_completados: int = Field(
         description="Cantidad de recursos completados", ge=0, example=12
+    )
+    engagement: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Índice de engagement (actividad de los últimos 30 días)",
+        example=60,
     )
 
 
@@ -564,8 +573,42 @@ async def dashboard_docente(
             "puntaje_promedio": e.progreso.puntaje_promedio,
             "total_interacciones": e.progreso.total_interacciones,
             "recursos_completados": e.progreso.recursos_completados,
+            "engagement": e.engagement,
         }
         for e in estudiantes
+    ]
+
+
+class TendenciaResponse(BaseModel):
+    """Punto semanal de la tendencia de la clase (histórico real)."""
+
+    week: str = Field(description="Semana ISO", example="2026-S24")
+    promedio: float = Field(description="Puntaje promedio de la semana", example=68.5)
+    riesgoAlto: int = Field(  # noqa: N815 (contrato camelCase con el frontend)
+        description="Estudiantes en riesgo alto/crítico esa semana", example=3
+    )
+
+
+@router.get(
+    "/dashboard/teacher/{course_id}/trend",
+    response_model=list[TendenciaResponse],
+    responses={
+        200: {"description": "Tendencia semanal histórica de la clase"},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+    },
+)
+async def tendencia_docente(
+    course_id: UUID = Path(..., description="UUID del curso"),
+    uc: ConsultarTendenciaUseCase = Depends(get_consultar_tendencia_uc),
+) -> list[dict]:
+    """Tendencia semanal del curso a partir del historial real de progreso.
+
+    **Auth:** JWT
+    """
+    puntos = await uc.execute(course_id)
+    return [
+        {"week": p.week, "promedio": p.promedio, "riesgoAlto": p.riesgo_alto}
+        for p in puntos
     ]
 
 
