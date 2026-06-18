@@ -1,18 +1,23 @@
+from datetime import datetime
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
     ProgresoAcademico,
+    ProgresoHistorial,
 )
 from src.domain.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo, TipoInteraccion
 from src.infrastructure.db.models.trazabilidad_models import (
+    FeedbackModel,
     IndicadorModel,
     InteraccionModel,
+    ProgresoHistorialModel,
     ProgresoModel,
 )
 
@@ -94,6 +99,15 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
                 ultima_actividad=p.ultima_actividad,
             )
             self._s.add(m)
+        # Snapshot append-only para la serie temporal de tendencia de clase.
+        self._s.add(
+            ProgresoHistorialModel(
+                estudiante_id=p.estudiante_id,
+                curso_id=p.curso_id,
+                nivel_riesgo=p.nivel_riesgo.value,
+                puntaje_promedio=p.puntaje_promedio,
+            )
+        )
         await self._s.flush()
         return p
 
@@ -115,6 +129,51 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
             )
         )
         await self._s.flush()
+
+    async def save_feedback(self, f: FeedbackDocente) -> FeedbackDocente:
+        self._s.add(
+            FeedbackModel(
+                id=f.id,
+                docente_id=f.docente_id,
+                estudiante_id=f.estudiante_id,
+                curso_id=f.curso_id,
+                mensaje=f.mensaje,
+                tipo=f.tipo,
+                created_at=f.created_at,
+            )
+        )
+        await self._s.flush()
+        return f
+
+    async def contar_interacciones_recientes(
+        self, curso_id: UUID, desde: datetime
+    ) -> dict[str, int]:
+        rows = await self._s.execute(
+            select(InteraccionModel.estudiante_id, func.count())
+            .where(
+                InteraccionModel.curso_id == curso_id,
+                InteraccionModel.fecha >= desde,
+            )
+            .group_by(InteraccionModel.estudiante_id)
+        )
+        return {str(est_id): total for est_id, total in rows.all()}
+
+    async def find_historial_curso(self, curso_id: UUID) -> list[ProgresoHistorial]:
+        rows = await self._s.execute(
+            select(ProgresoHistorialModel)
+            .where(ProgresoHistorialModel.curso_id == curso_id)
+            .order_by(ProgresoHistorialModel.registrado_en.asc())
+        )
+        return [
+            ProgresoHistorial(
+                estudiante_id=m.estudiante_id,
+                curso_id=m.curso_id,
+                nivel_riesgo=NivelRiesgo(m.nivel_riesgo),
+                puntaje_promedio=m.puntaje_promedio,
+                registrado_en=m.registrado_en,
+            )
+            for m in rows.scalars().all()
+        ]
 
 
 def _progreso_to_entity(m: ProgresoModel) -> ProgresoAcademico:

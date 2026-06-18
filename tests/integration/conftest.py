@@ -6,6 +6,7 @@ casos de uso vía dependency_overrides; se conserva la lógica real de los UC
 (actualización de progreso, recálculo de riesgo, ordenamiento del dashboard).
 """
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest_asyncio
@@ -16,20 +17,31 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
+from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
+from src.application.use_cases.generar_reporte_docente import (
+    GenerarReporteDocenteUseCase,
+)
+from src.application.use_cases.registrar_feedback import RegistrarFeedbackUseCase
 from src.application.use_cases.registrar_interaccion import RegistrarInteraccionUseCase
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
     ProgresoAcademico,
+    ProgresoHistorial,
 )
 from src.domain.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
+from src.domain.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.infrastructure.adapters.in_.main import app
+from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
+    get_consultar_tendencia_uc,
     get_dashboard_docente_uc,
+    get_generar_reporte_docente_uc,
+    get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     require_jwt,
 )
@@ -46,6 +58,8 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
     def __init__(self):
         self.interacciones: list[InteraccionAcademica] = []
         self.progresos: dict[tuple[UUID, UUID], ProgresoAcademico] = {}
+        self.feedbacks: list = []
+        self.historial: list[ProgresoHistorial] = []
 
     async def save_interaccion(
         self, interaccion: InteraccionAcademica
@@ -64,6 +78,15 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
 
     async def save_progreso(self, progreso: ProgresoAcademico) -> ProgresoAcademico:
         self.progresos[(progreso.estudiante_id, progreso.curso_id)] = progreso
+        self.historial.append(
+            ProgresoHistorial(
+                estudiante_id=progreso.estudiante_id,
+                curso_id=progreso.curso_id,
+                nivel_riesgo=progreso.nivel_riesgo,
+                puntaje_promedio=progreso.puntaje_promedio,
+                registrado_en=datetime.now(timezone.utc),
+            )
+        )
         return progreso
 
     async def find_all_progreso_curso(self, curso_id):
@@ -71,6 +94,34 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
 
     async def save_indicador(self, indicador: IndicadorTrazabilidad, progreso_id):
         return None
+
+    async def save_feedback(self, feedback):
+        self.feedbacks.append(feedback)
+        return feedback
+
+    async def contar_interacciones_recientes(self, curso_id, desde):
+        counts: dict[str, int] = {}
+        for i in self.interacciones:
+            if i.curso_id == curso_id and i.fecha >= desde:
+                counts[str(i.estudiante_id)] = counts.get(str(i.estudiante_id), 0) + 1
+        return counts
+
+    async def find_historial_curso(self, curso_id):
+        return [h for h in self.historial if h.curso_id == curso_id]
+
+
+class _FakeUsuariosClient(UsuariosClientPort):
+    """Simula ms-usuarios: enriquece cualquier UUID con un perfil sintético."""
+
+    async def obtener_perfiles(self, ids: list[UUID]) -> dict[str, dict]:
+        return {
+            str(i): {
+                "nombre": "Est",
+                "apellido": "Prueba",
+                "correo": f"{i}@upc.edu.pe",
+            }
+            for i in ids
+        }
 
 
 class _StubEventPublisher:
@@ -93,7 +144,19 @@ async def client():
         CalcularIndicadoresUseCase(repo)
     )
     app.dependency_overrides[get_dashboard_docente_uc] = lambda: (
-        ConsultarDashboardDocenteUseCase(repo)
+        ConsultarDashboardDocenteUseCase(repo, _FakeUsuariosClient())
+    )
+    app.dependency_overrides[get_generar_reporte_docente_uc] = lambda: (
+        GenerarReporteDocenteUseCase(
+            ConsultarDashboardDocenteUseCase(repo, _FakeUsuariosClient()),
+            PdfReporteRenderer(),
+        )
+    )
+    app.dependency_overrides[get_registrar_feedback_uc] = lambda: (
+        RegistrarFeedbackUseCase(repo)
+    )
+    app.dependency_overrides[get_consultar_tendencia_uc] = lambda: (
+        ConsultarTendenciaUseCase(repo)
     )
     # Sobreescribe la validación JWT por un payload fake (autenticación simulada).
     app.dependency_overrides[require_jwt] = lambda: FAKE_PAYLOAD

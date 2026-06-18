@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     database_name: str = ""
 
     lms_service_url: str = "http://localhost:8002"
+    usuarios_service_url: str = "http://usuarios.sward.local:8000"
     aws_region: str = "us-east-1"
     eventbridge_bus_name: str = "sward-event-bus"
     environment: str = "development"
