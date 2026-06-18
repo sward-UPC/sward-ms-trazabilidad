@@ -1,9 +1,13 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
+from datetime import datetime
+
+from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
     ProgresoAcademico,
+    ProgresoHistorial,
 )
 
 
@@ -30,3 +34,14 @@ class TrazabilidadRepositoryPort(ABC):
     async def save_indicador(
         self, indicador: IndicadorTrazabilidad, progreso_id: UUID
     ) -> None: ...
+    @abstractmethod
+    async def save_feedback(self, feedback: FeedbackDocente) -> FeedbackDocente: ...
+    @abstractmethod
+    async def contar_interacciones_recientes(
+        self, curso_id: UUID, desde: datetime
+    ) -> dict[str, int]:
+        """Cuenta interacciones por estudiante (str(uuid)) desde una fecha."""
+        ...
+
+    @abstractmethod
+    async def find_historial_curso(self, curso_id: UUID) -> list[ProgresoHistorial]: ...
