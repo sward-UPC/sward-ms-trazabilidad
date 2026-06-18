@@ -1,4 +1,3 @@
-import uuid as _uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import UUID
@@ -7,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sward_shared.identidad import moodle_uuid as _moodle_id
 
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
@@ -49,12 +49,7 @@ from src.infrastructure.dependencies import (
     require_service_key,
 )
 
-# Namespace fijo para derivar UUIDs determinísticos desde IDs de Moodle.
-MOODLE_NS = _uuid.UUID("a9f3e7b5-1234-5678-abcd-ef0123456789")
-
-
-def _moodle_id(entity_type: str, moodle_id: str) -> _uuid.UUID:
-    return _uuid.uuid5(MOODLE_NS, f"{entity_type}:{moodle_id}")
+# La derivación Moodle→UUID vive en sward_shared.identidad (_moodle_id, importado arriba).
 
 
 # Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
@@ -250,6 +245,17 @@ class EstudianteProgressResponse(BaseModel):
         description="Índice de engagement (actividad de los últimos 30 días)",
         example=60,
     )
+    conceptos_en_riesgo: int = Field(
+        default=0,
+        ge=0,
+        description="Nº de conceptos (secciones) con tasa de acierto < 0.5",
+        example=2,
+    )
+    ultima_actividad: str = Field(
+        default="",
+        description="Fecha/hora de la última actividad (ISO 8601)",
+        example="2026-06-18T12:00:00Z",
+    )
 
 
 @router.post(
@@ -400,6 +406,8 @@ async def _get_interactions_handler(
         {
             "id": str(i.id),
             "actividad_id": str(i.actividad_id) if i.actividad_id else None,
+            "concept_id": i.concept_id,
+            "is_correct": i.is_correct,
             "tipo": i.tipo.value,
             "fecha": i.fecha.isoformat(),
             "curso_id": str(i.curso_id),
@@ -440,6 +448,7 @@ class LmsInteraccionItem(BaseModel):
     moodle_user_id: str
     moodle_course_id: str
     moodle_activity_id: str
+    concepto: str = ""
     es_correcta: bool = False
     fecha_evento: datetime
     moodle_event_id: str = ""
@@ -497,6 +506,8 @@ async def lms_sync(
             estudiante_id=_moodle_id("user", item.moodle_user_id),
             curso_id=_moodle_id("course", item.moodle_course_id),
             actividad_id=_moodle_id("activity", item.moodle_activity_id),
+            concept_id=item.concepto or None,
+            is_correct=item.es_correcta,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,
@@ -574,6 +585,12 @@ async def dashboard_docente(
             "total_interacciones": e.progreso.total_interacciones,
             "recursos_completados": e.progreso.recursos_completados,
             "engagement": e.engagement,
+            "conceptos_en_riesgo": e.conceptos_en_riesgo,
+            "ultima_actividad": (
+                e.progreso.ultima_actividad.isoformat()
+                if e.progreso.ultima_actividad
+                else ""
+            ),
         }
         for e in estudiantes
     ]
