@@ -1,4 +1,3 @@
-import uuid as _uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import UUID
@@ -7,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sward_shared.identidad import moodle_uuid as _moodle_id
 
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
@@ -49,12 +49,7 @@ from src.infrastructure.dependencies import (
     require_service_key,
 )
 
-# Namespace fijo para derivar UUIDs determinísticos desde IDs de Moodle.
-MOODLE_NS = _uuid.UUID("a9f3e7b5-1234-5678-abcd-ef0123456789")
-
-
-def _moodle_id(entity_type: str, moodle_id: str) -> _uuid.UUID:
-    return _uuid.uuid5(MOODLE_NS, f"{entity_type}:{moodle_id}")
+# La derivación Moodle→UUID vive en sward_shared.identidad (_moodle_id, importado arriba).
 
 
 # Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
