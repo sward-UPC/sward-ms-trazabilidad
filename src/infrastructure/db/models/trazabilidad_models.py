@@ -80,3 +80,23 @@ class FeedbackModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ProgresoHistorialModel(Base):
+    """Snapshot append-only del progreso en cada recálculo, para series temporales."""
+
+    __tablename__ = "progress_history"
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    estudiante_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    curso_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    nivel_riesgo: Mapped[str] = mapped_column(String(20), default="bajo")
+    puntaje_promedio: Mapped[float] = mapped_column(Float, default=0.0)
+    registrado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )

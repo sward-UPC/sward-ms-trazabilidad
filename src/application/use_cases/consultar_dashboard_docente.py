@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from src.domain.entities.progreso_academico import ProgresoAcademico
@@ -7,6 +8,10 @@ from src.domain.ports.out_.trazabilidad_repository_port import (
 )
 from src.domain.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo
+
+# Ventana e intensidad del índice de engagement (interacciones recientes).
+_ENGAGEMENT_DIAS = 30
+_ENGAGEMENT_FACTOR = 5  # engagement = min(100, interacciones_30d * 5)
 
 
 @dataclass
@@ -17,6 +22,7 @@ class EstudianteDashboard:
     nombre: str = ""
     apellido: str = ""
     correo: str = ""
+    engagement: int = 0
 
 
 class ConsultarDashboardDocenteUseCase:
@@ -43,12 +49,18 @@ class ConsultarDashboardDocenteUseCase:
         perfiles = await self._usuarios.obtener_perfiles(
             [p.estudiante_id for p in progresos]
         )
+        # Engagement = actividad reciente (interacciones de los últimos 30 días).
+        desde = datetime.now(timezone.utc) - timedelta(days=_ENGAGEMENT_DIAS)
+        recientes = await self._repo.contar_interacciones_recientes(curso_id, desde)
         return [
             EstudianteDashboard(
                 progreso=p,
                 nombre=perfiles.get(str(p.estudiante_id), {}).get("nombre", ""),
                 apellido=perfiles.get(str(p.estudiante_id), {}).get("apellido", ""),
                 correo=perfiles.get(str(p.estudiante_id), {}).get("correo", ""),
+                engagement=min(
+                    100, recientes.get(str(p.estudiante_id), 0) * _ENGAGEMENT_FACTOR
+                ),
             )
             for p in progresos
         ]
