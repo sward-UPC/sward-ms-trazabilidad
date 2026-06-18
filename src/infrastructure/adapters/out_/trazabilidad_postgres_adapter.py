@@ -33,6 +33,8 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
             curso_id=i.curso_id,
             actividad_id=i.actividad_id,
             recurso_id=i.recurso_id,
+            concept_id=i.concept_id,
+            is_correct=i.is_correct,
             tipo=i.tipo.value,
             fecha=i.fecha,
             moodle_event_id=i.moodle_event_id,
@@ -60,6 +62,8 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
                 recurso_id=m.recurso_id,
                 tipo=TipoInteraccion(m.tipo),
                 fecha=m.fecha,
+                concept_id=m.concept_id,
+                is_correct=m.is_correct,
             )
             for m in r.scalars().all()
         ]
