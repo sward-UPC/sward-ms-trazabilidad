@@ -9,4 +9,7 @@ httpx>=0.27.0
 boto3>=1.34.0
 reportlab>=4.1.0
 scalar-fastapi>=1.0
-sward-shared @ git+https://github.com/sward-UPC/sward-shared.git@main
+# Pineado al commit que incluye sward_shared.identidad. Usar @main hacía que la
+# capa Docker de pip quedara cacheada con una versión vieja (sin el módulo
+# identidad), rompiendo el arranque. Bumpear este SHA al actualizar sward-shared.
+sward-shared @ git+https://github.com/sward-UPC/sward-shared.git@b5cc5575feef83ae65e74bb48aa8684db03acdc2
