@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -22,6 +22,9 @@ class InteraccionModel(Base):
     )
     actividad_id: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     recurso_id: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Concepto/skill (sección Moodle) y corrección, para construir secuencias SAKT.
+    concept_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True

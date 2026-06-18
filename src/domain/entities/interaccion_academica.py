@@ -24,3 +24,6 @@ class InteraccionAcademica:
     fecha: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     respuestas: list[RespuestaActividad] = field(default_factory=list)
     moodle_event_id: str = ""
+    # Concepto/skill (sección Moodle) y corrección, para secuencias SAKT.
+    concept_id: str | None = None
+    is_correct: bool | None = None
