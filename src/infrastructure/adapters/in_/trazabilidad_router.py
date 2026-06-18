@@ -395,6 +395,8 @@ async def _get_interactions_handler(
         {
             "id": str(i.id),
             "actividad_id": str(i.actividad_id) if i.actividad_id else None,
+            "concept_id": i.concept_id,
+            "is_correct": i.is_correct,
             "tipo": i.tipo.value,
             "fecha": i.fecha.isoformat(),
             "curso_id": str(i.curso_id),
@@ -435,6 +437,7 @@ class LmsInteraccionItem(BaseModel):
     moodle_user_id: str
     moodle_course_id: str
     moodle_activity_id: str
+    concepto: str = ""
     es_correcta: bool = False
     fecha_evento: datetime
     moodle_event_id: str = ""
@@ -492,6 +495,8 @@ async def lms_sync(
             estudiante_id=_moodle_id("user", item.moodle_user_id),
             curso_id=_moodle_id("course", item.moodle_course_id),
             actividad_id=_moodle_id("activity", item.moodle_activity_id),
+            concept_id=item.concepto or None,
+            is_correct=item.es_correcta,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,
