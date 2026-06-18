@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from scalar_fastapi import get_scalar_api_reference
+from sqlalchemy import text
 
 from src.infrastructure.adapters.in_.trazabilidad_router import internal_router, router
 from src.infrastructure.config.settings import settings
@@ -14,12 +15,20 @@ from src.infrastructure.db.models.trazabilidad_models import Base
 
 logger = logging.getLogger(__name__)
 
+# Columnas nuevas en tablas existentes (create_all no las agrega). Idempotente.
+_MIGRACIONES = [
+    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS concept_id VARCHAR(255)",
+    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_correct BOOLEAN",
+]
+
 
 async def _init_db() -> None:
     for intento in range(10):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                for stmt in _MIGRACIONES:
+                    await conn.execute(text(stmt))
             logger.info("Base de datos lista.")
             return
         except Exception as exc:
