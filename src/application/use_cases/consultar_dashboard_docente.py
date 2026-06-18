@@ -23,6 +23,7 @@ class EstudianteDashboard:
     apellido: str = ""
     correo: str = ""
     engagement: int = 0
+    conceptos_en_riesgo: int = 0
 
 
 class ConsultarDashboardDocenteUseCase:
@@ -52,6 +53,8 @@ class ConsultarDashboardDocenteUseCase:
         # Engagement = actividad reciente (interacciones de los últimos 30 días).
         desde = datetime.now(timezone.utc) - timedelta(days=_ENGAGEMENT_DIAS)
         recientes = await self._repo.contar_interacciones_recientes(curso_id, desde)
+        # Conceptos (secciones) donde el estudiante tiene baja tasa de acierto.
+        en_riesgo = await self._repo.contar_conceptos_en_riesgo(curso_id)
         return [
             EstudianteDashboard(
                 progreso=p,
@@ -61,6 +64,7 @@ class ConsultarDashboardDocenteUseCase:
                 engagement=min(
                     100, recientes.get(str(p.estudiante_id), 0) * _ENGAGEMENT_FACTOR
                 ),
+                conceptos_en_riesgo=en_riesgo.get(str(p.estudiante_id), 0),
             )
             for p in progresos
         ]
