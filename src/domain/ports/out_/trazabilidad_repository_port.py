@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
+from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
@@ -30,3 +31,5 @@ class TrazabilidadRepositoryPort(ABC):
     async def save_indicador(
         self, indicador: IndicadorTrazabilidad, progreso_id: UUID
     ) -> None: ...
+    @abstractmethod
+    async def save_feedback(self, feedback: FeedbackDocente) -> FeedbackDocente: ...

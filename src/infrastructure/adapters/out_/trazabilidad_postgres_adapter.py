@@ -1,6 +1,7 @@
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
@@ -11,6 +12,7 @@ from src.domain.ports.out_.trazabilidad_repository_port import (
 )
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo, TipoInteraccion
 from src.infrastructure.db.models.trazabilidad_models import (
+    FeedbackModel,
     IndicadorModel,
     InteraccionModel,
     ProgresoModel,
@@ -115,6 +117,21 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
             )
         )
         await self._s.flush()
+
+    async def save_feedback(self, f: FeedbackDocente) -> FeedbackDocente:
+        self._s.add(
+            FeedbackModel(
+                id=f.id,
+                docente_id=f.docente_id,
+                estudiante_id=f.estudiante_id,
+                curso_id=f.curso_id,
+                mensaje=f.mensaje,
+                tipo=f.tipo,
+                created_at=f.created_at,
+            )
+        )
+        await self._s.flush()
+        return f
 
 
 def _progreso_to_entity(m: ProgresoModel) -> ProgresoAcademico:

@@ -16,6 +16,10 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
+from src.application.use_cases.generar_reporte_docente import (
+    GenerarReporteDocenteUseCase,
+)
+from src.application.use_cases.registrar_feedback import RegistrarFeedbackUseCase
 from src.application.use_cases.registrar_interaccion import RegistrarInteraccionUseCase
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
@@ -25,11 +29,15 @@ from src.domain.entities.progreso_academico import (
 from src.domain.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
+from src.domain.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.infrastructure.adapters.in_.main import app
+from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
     get_dashboard_docente_uc,
+    get_generar_reporte_docente_uc,
+    get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     require_jwt,
 )
@@ -46,6 +54,7 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
     def __init__(self):
         self.interacciones: list[InteraccionAcademica] = []
         self.progresos: dict[tuple[UUID, UUID], ProgresoAcademico] = {}
+        self.feedbacks: list = []
 
     async def save_interaccion(
         self, interaccion: InteraccionAcademica
@@ -72,6 +81,24 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
     async def save_indicador(self, indicador: IndicadorTrazabilidad, progreso_id):
         return None
 
+    async def save_feedback(self, feedback):
+        self.feedbacks.append(feedback)
+        return feedback
+
+
+class _FakeUsuariosClient(UsuariosClientPort):
+    """Simula ms-usuarios: enriquece cualquier UUID con un perfil sintético."""
+
+    async def obtener_perfiles(self, ids: list[UUID]) -> dict[str, dict]:
+        return {
+            str(i): {
+                "nombre": "Est",
+                "apellido": "Prueba",
+                "correo": f"{i}@upc.edu.pe",
+            }
+            for i in ids
+        }
+
 
 class _StubEventPublisher:
     def publish(self, event) -> None:  # noqa: ARG002
@@ -93,7 +120,16 @@ async def client():
         CalcularIndicadoresUseCase(repo)
     )
     app.dependency_overrides[get_dashboard_docente_uc] = lambda: (
-        ConsultarDashboardDocenteUseCase(repo)
+        ConsultarDashboardDocenteUseCase(repo, _FakeUsuariosClient())
+    )
+    app.dependency_overrides[get_generar_reporte_docente_uc] = lambda: (
+        GenerarReporteDocenteUseCase(
+            ConsultarDashboardDocenteUseCase(repo, _FakeUsuariosClient()),
+            PdfReporteRenderer(),
+        )
+    )
+    app.dependency_overrides[get_registrar_feedback_uc] = lambda: (
+        RegistrarFeedbackUseCase(repo)
     )
     # Sobreescribe la validación JWT por un payload fake (autenticación simulada).
     app.dependency_overrides[require_jwt] = lambda: FAKE_PAYLOAD
