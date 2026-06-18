@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.entities.interaccion_academica import InteraccionAcademica
@@ -161,6 +161,26 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
             .group_by(InteraccionModel.estudiante_id)
         )
         return {str(est_id): total for est_id, total in rows.all()}
+
+    async def contar_conceptos_en_riesgo(self, curso_id: UUID) -> dict[str, int]:
+        rows = await self._s.execute(
+            select(
+                InteraccionModel.estudiante_id,
+                InteraccionModel.concept_id,
+                func.avg(case((InteraccionModel.is_correct, 1.0), else_=0.0)),
+            )
+            .where(
+                InteraccionModel.curso_id == curso_id,
+                InteraccionModel.concept_id.is_not(None),
+                InteraccionModel.is_correct.is_not(None),
+            )
+            .group_by(InteraccionModel.estudiante_id, InteraccionModel.concept_id)
+        )
+        counts: dict[str, int] = {}
+        for est_id, _concept, ratio in rows.all():
+            if ratio is not None and float(ratio) < 0.5:
+                counts[str(est_id)] = counts.get(str(est_id), 0) + 1
+        return counts
 
     async def find_historial_curso(self, curso_id: UUID) -> list[ProgresoHistorial]:
         rows = await self._s.execute(
