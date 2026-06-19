@@ -29,3 +29,5 @@ class InteraccionAcademica:
     is_correct: bool | None = None
     # Enlace directo al módulo en Moodle.
     url_modulo: str = ""
+    # Nombre real de la actividad en Moodle (p.ej. "Práctica 5: Normalización").
+    nombre_actividad: str = ""
