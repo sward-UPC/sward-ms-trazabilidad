@@ -444,6 +444,108 @@ async def get_interactions(
     return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
+@router.get("/students/{student_id}/concept-mastery", status_code=status.HTTP_200_OK)
+async def get_concept_mastery(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Dominio real por concepto/sección del curso para un estudiante.
+
+    Agrupa las interacciones por ``concept_id`` (sección de Moodle) y calcula la
+    tasa de acierto. Alimenta el radar, las barras y las recomendaciones del
+    detalle del estudiante. Orden: peores primero.
+    """
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    rows = (
+        await session.execute(
+            sa_select(
+                InteraccionModel.concept_id,
+                sa_func.count(InteraccionModel.id),
+                sa_func.count(InteraccionModel.id).filter(
+                    InteraccionModel.is_correct.is_(True)
+                ),
+            )
+            .where(
+                InteraccionModel.estudiante_id == student_id,
+                InteraccionModel.curso_id == courseId,
+                InteraccionModel.concept_id.isnot(None),
+            )
+            .group_by(InteraccionModel.concept_id)
+        )
+    ).all()
+    out = []
+    for concepto, total, correctas in rows:
+        total = int(total or 0)
+        correctas = int(correctas or 0)
+        if total == 0:
+            continue
+        out.append(
+            {
+                "concepto": concepto,
+                "dominio": round(correctas / total * 100, 1),
+                "total": total,
+                "correctas": correctas,
+            }
+        )
+    out.sort(key=lambda x: x["dominio"])
+    return out
+
+
+@router.get("/students/{student_id}/weekly-progress", status_code=status.HTTP_200_OK)
+async def get_weekly_progress(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Evolución del dominio: dominio acumulado (running % de aciertos) a lo
+    largo de la secuencia de actividades, en hasta 6 etapas.
+
+    Se usa la secuencia (no semanas calendario) porque las notas de Moodle no
+    traen fecha de envío fiable; así la curva refleja la evolución real.
+    """
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    rows = (
+        await session.execute(
+            sa_select(InteraccionModel.is_correct)
+            .where(
+                InteraccionModel.estudiante_id == student_id,
+                InteraccionModel.curso_id == courseId,
+            )
+            .order_by(InteraccionModel.fecha, InteraccionModel.id)
+        )
+    ).all()
+    n = len(rows)
+    if n == 0:
+        return []
+    etapas = min(6, n)
+    tam = n / etapas
+    acum_total = 0
+    acum_correct = 0
+    out = []
+    for i, (is_correct,) in enumerate(rows, start=1):
+        acum_total += 1
+        if is_correct:
+            acum_correct += 1
+        if i >= round((len(out) + 1) * tam) or i == n:
+            out.append(
+                {
+                    "etapa": f"E{len(out) + 1}",
+                    "dominio": round(acum_correct / acum_total * 100, 1),
+                }
+            )
+            if len(out) >= etapas:
+                break
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Schemas para el endpoint interno de sincronización LMS
 # ---------------------------------------------------------------------------
