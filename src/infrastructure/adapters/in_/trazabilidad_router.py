@@ -417,6 +417,7 @@ async def _get_interactions_handler(
             "fecha": i.fecha.isoformat(),
             "curso_id": str(i.curso_id),
             "url_modulo": i.url_modulo,
+            "nombre_actividad": i.nombre_actividad,
         }
         for i in items
     ]
@@ -568,6 +569,7 @@ class LmsInteraccionItem(BaseModel):
     es_correcta: bool = False
     nota: float = 0.0
     url_modulo: str = ""
+    nombre_actividad: str = ""
     fecha_evento: datetime
     moodle_event_id: str = ""
 
@@ -632,6 +634,8 @@ async def lms_sync(
                 existente.concept_id = item.concepto or None
                 if item.url_modulo:
                     existente.url_modulo = item.url_modulo
+                if item.nombre_actividad:
+                    existente.nombre_actividad = item.nombre_actividad
                 omitidas += 1
                 continue
 
@@ -649,6 +653,7 @@ async def lms_sync(
             is_correct=item.es_correcta,
             nota=item.nota,
             url_modulo=item.url_modulo,
+            nombre_actividad=item.nombre_actividad,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,
