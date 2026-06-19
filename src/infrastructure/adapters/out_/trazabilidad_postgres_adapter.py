@@ -210,5 +210,7 @@ def _progreso_to_entity(m: ProgresoModel) -> ProgresoAcademico:
         total_interacciones=m.total_interacciones,
         recursos_completados=m.recursos_completados,
         puntaje_promedio=m.puntaje_promedio,
+        nombre=getattr(m, "nombre", "") or "",
+        correo=getattr(m, "correo", "") or "",
         ultima_actividad=m.ultima_actividad,
     )

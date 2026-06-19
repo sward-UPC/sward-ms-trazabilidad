@@ -50,6 +50,10 @@ class ProgresoModel(Base):
     total_interacciones: Mapped[int] = mapped_column(Integer, default=0)
     recursos_completados: Mapped[int] = mapped_column(Integer, default=0)
     puntaje_promedio: Mapped[float] = mapped_column(Float, default=0.0)
+    # Nombre/correo del estudiante en Moodle (para mostrar en el dashboard sin
+    # depender de que se haya registrado en SWARD).
+    nombre: Mapped[str] = mapped_column(String(255), default="")
+    correo: Mapped[str] = mapped_column(String(255), default="")
     ultima_actividad: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
