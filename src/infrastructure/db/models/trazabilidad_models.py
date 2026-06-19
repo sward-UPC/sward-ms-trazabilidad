@@ -27,6 +27,9 @@ class InteraccionModel(Base):
         String(255), nullable=True, index=True
     )
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Nota numérica 0-100 (para el dominio continuo por sección; is_correct se
+    # mantiene para las secuencias binarias del SAKT).
+    nota: Mapped[float | None] = mapped_column(Float, nullable=True)
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
