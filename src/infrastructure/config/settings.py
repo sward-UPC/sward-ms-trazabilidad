@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Inyectadas por CDK vía Secrets Manager (una por caller autorizado).
     authorized_recomendacion_key: str = ""
     authorized_integracion_lms_key: str = ""
+    authorized_usuarios_key: str = ""
 
     @property
     def authorized_service_keys_set(self) -> set[str]:
@@ -54,6 +55,7 @@ class Settings(BaseSettings):
         for val in (
             self.authorized_recomendacion_key,
             self.authorized_integracion_lms_key,
+            self.authorized_usuarios_key,
         ):
             if val:
                 keys.add(val)
