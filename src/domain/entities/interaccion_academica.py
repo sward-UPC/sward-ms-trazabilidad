@@ -27,3 +27,5 @@ class InteraccionAcademica:
     # Concepto/skill (sección Moodle) y corrección, para secuencias SAKT.
     concept_id: str | None = None
     is_correct: bool | None = None
+    # Enlace directo al módulo en Moodle.
+    url_modulo: str = ""
