@@ -30,6 +30,8 @@ class InteraccionModel(Base):
     # Nota numérica 0-100 (para el dominio continuo por sección; is_correct se
     # mantiene para las secuencias binarias del SAKT).
     nota: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Enlace directo al módulo en Moodle (para abrirlo desde el panel docente).
+    url_modulo: Mapped[str] = mapped_column(String(500), default="")
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
