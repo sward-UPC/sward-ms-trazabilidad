@@ -506,14 +506,18 @@ async def lms_sync(
             perfiles[est_id] = (item.nombre, item.correo)
 
         if item.moodle_event_id:
-            exists = (
+            existente = (
                 await session.execute(
-                    sa_select(InteraccionModel.id)
+                    sa_select(InteraccionModel)
                     .where(InteraccionModel.moodle_event_id == item.moodle_event_id)
                     .limit(1)
                 )
             ).scalar_one_or_none()
-            if exists:
+            if existente is not None:
+                # Idempotente pero auto-corrige: actualiza la corrección/concepto
+                # por si la nota en Moodle cambió o el registro venía incompleto.
+                existente.is_correct = item.es_correcta
+                existente.concept_id = item.concepto or None
                 omitidas += 1
                 continue
 
