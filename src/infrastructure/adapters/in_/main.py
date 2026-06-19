@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 _MIGRACIONES = [
     "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS concept_id VARCHAR(255)",
     "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_correct BOOLEAN",
+    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS nota DOUBLE PRECISION",
     "ALTER TABLE academic_progress ADD COLUMN IF NOT EXISTS nombre VARCHAR(255) NOT NULL DEFAULT ''",
     "ALTER TABLE academic_progress ADD COLUMN IF NOT EXISTS correo VARCHAR(255) NOT NULL DEFAULT ''",
 ]
