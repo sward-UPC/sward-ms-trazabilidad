@@ -24,6 +24,8 @@ class EstudianteDashboard:
     correo: str = ""
     engagement: int = 0
     conceptos_en_riesgo: int = 0
+    # True si el estudiante tiene cuenta en SWARD; False si solo existe en Moodle.
+    registrado_en_sward: bool = False
 
 
 class ConsultarDashboardDocenteUseCase:
@@ -55,16 +57,36 @@ class ConsultarDashboardDocenteUseCase:
         recientes = await self._repo.contar_interacciones_recientes(curso_id, desde)
         # Conceptos (secciones) donde el estudiante tiene baja tasa de acierto.
         en_riesgo = await self._repo.contar_conceptos_en_riesgo(curso_id)
-        return [
-            EstudianteDashboard(
-                progreso=p,
-                nombre=perfiles.get(str(p.estudiante_id), {}).get("nombre", ""),
-                apellido=perfiles.get(str(p.estudiante_id), {}).get("apellido", ""),
-                correo=perfiles.get(str(p.estudiante_id), {}).get("correo", ""),
-                engagement=min(
-                    100, recientes.get(str(p.estudiante_id), 0) * _ENGAGEMENT_FACTOR
-                ),
-                conceptos_en_riesgo=en_riesgo.get(str(p.estudiante_id), 0),
+
+        def _datos(p):
+            """Nombre/correo del perfil SWARD si está registrado; si no, los de
+            Moodle guardados en el progreso. Devuelve (nombre, apellido, correo,
+            registrado)."""
+            perfil = perfiles.get(str(p.estudiante_id))
+            if perfil:
+                return (
+                    perfil.get("nombre", ""),
+                    perfil.get("apellido", ""),
+                    perfil.get("correo", ""),
+                    True,
+                )
+            # Solo en Moodle: el nombre viene completo (fullname) en p.nombre.
+            return (p.nombre, "", p.correo, False)
+
+        resultado = []
+        for p in progresos:
+            nombre, apellido, correo, registrado = _datos(p)
+            resultado.append(
+                EstudianteDashboard(
+                    progreso=p,
+                    nombre=nombre,
+                    apellido=apellido,
+                    correo=correo,
+                    engagement=min(
+                        100, recientes.get(str(p.estudiante_id), 0) * _ENGAGEMENT_FACTOR
+                    ),
+                    conceptos_en_riesgo=en_riesgo.get(str(p.estudiante_id), 0),
+                    registrado_en_sward=registrado,
+                )
             )
-            for p in progresos
-        ]
+        return resultado

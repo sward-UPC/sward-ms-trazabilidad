@@ -32,6 +32,9 @@ class ProgresoAcademico:
     total_interacciones: int = 0
     recursos_completados: int = 0
     puntaje_promedio: float = 0.0
+    # Nombre/correo del estudiante en Moodle (fallback si no está en SWARD).
+    nombre: str = ""
+    correo: str = ""
     ultima_actividad: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

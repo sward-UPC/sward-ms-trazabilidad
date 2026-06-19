@@ -251,6 +251,11 @@ class EstudianteProgressResponse(BaseModel):
         description="Nº de conceptos (secciones) con tasa de acierto < 0.5",
         example=2,
     )
+    registrado_en_sward: bool = Field(
+        default=False,
+        description="True si el estudiante tiene cuenta en SWARD; False si solo está en Moodle",
+        example=True,
+    )
     ultima_actividad: str = Field(
         default="",
         description="Fecha/hora de la última actividad (ISO 8601)",
@@ -448,6 +453,8 @@ class LmsInteraccionItem(BaseModel):
     moodle_user_id: str
     moodle_course_id: str
     moodle_activity_id: str
+    nombre: str = ""
+    correo: str = ""
     concepto: str = ""
     es_correcta: bool = False
     fecha_evento: datetime
@@ -476,14 +483,28 @@ async def lms_sync(
 
     **Auth:** X-Service-Key | **Idempotente:** sí (omite eventos ya procesados)
     """
+    from sqlalchemy import func as sa_func
     from sqlalchemy import select as sa_select
 
-    from src.domain.value_objects.nivel_riesgo import TipoInteraccion
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+    from src.domain.value_objects.nivel_riesgo import NivelRiesgo, TipoInteraccion
+    from src.infrastructure.db.models.trazabilidad_models import (
+        InteraccionModel,
+        ProgresoModel,
+    )
 
     procesadas = 0
     omitidas = 0
+    # (estudiante_id, curso_id) afectados -> para recomputar su progreso.
+    afectados: set[tuple] = set()
+    # estudiante_id -> (nombre, correo) más reciente visto en este lote.
+    perfiles: dict = {}
     for item in body.interacciones:
+        est_id = _moodle_id("user", item.moodle_user_id)
+        cur_id = _moodle_id("course", item.moodle_course_id)
+        afectados.add((est_id, cur_id))
+        if item.nombre or item.correo:
+            perfiles[est_id] = (item.nombre, item.correo)
+
         if item.moodle_event_id:
             exists = (
                 await session.execute(
@@ -503,8 +524,8 @@ async def lms_sync(
             else item.fecha_evento.replace(tzinfo=timezone.utc)
         )
         m = InteraccionModel(
-            estudiante_id=_moodle_id("user", item.moodle_user_id),
-            curso_id=_moodle_id("course", item.moodle_course_id),
+            estudiante_id=est_id,
+            curso_id=cur_id,
             actividad_id=_moodle_id("activity", item.moodle_activity_id),
             concept_id=item.concepto or None,
             is_correct=item.es_correcta,
@@ -514,6 +535,62 @@ async def lms_sync(
         )
         session.add(m)
         procesadas += 1
+
+    # Persiste las interacciones para poder agregarlas (mismo commit).
+    await session.flush()
+
+    # Recomputa academic_progress por estudiante/curso desde TODAS sus interacciones.
+    for est_id, cur_id in afectados:
+        fila = (
+            await session.execute(
+                sa_select(
+                    sa_func.count(InteraccionModel.id),
+                    sa_func.count(InteraccionModel.id).filter(
+                        InteraccionModel.is_correct.is_(True)
+                    ),
+                    sa_func.max(InteraccionModel.fecha),
+                ).where(
+                    InteraccionModel.estudiante_id == est_id,
+                    InteraccionModel.curso_id == cur_id,
+                )
+            )
+        ).one()
+        total, correctas, ultima = int(fila[0] or 0), int(fila[1] or 0), fila[2]
+        if total == 0:
+            continue
+        puntaje = round(correctas / total * 100, 1)
+        if puntaje < 40:
+            riesgo = NivelRiesgo.CRITICO
+        elif puntaje < 55:
+            riesgo = NivelRiesgo.ALTO
+        elif puntaje < 70:
+            riesgo = NivelRiesgo.MEDIO
+        else:
+            riesgo = NivelRiesgo.BAJO
+        nombre, correo = perfiles.get(est_id, ("", ""))
+
+        prog = (
+            await session.execute(
+                sa_select(ProgresoModel).where(
+                    ProgresoModel.estudiante_id == est_id,
+                    ProgresoModel.curso_id == cur_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if prog is None:
+            prog = ProgresoModel(estudiante_id=est_id, curso_id=cur_id)
+            session.add(prog)
+        prog.total_interacciones = total
+        prog.recursos_completados = correctas
+        prog.puntaje_promedio = puntaje
+        prog.porcentaje_avance = puntaje
+        prog.nivel_riesgo = riesgo.value
+        if ultima is not None:
+            prog.ultima_actividad = ultima
+        if nombre:
+            prog.nombre = nombre
+        if correo:
+            prog.correo = correo
 
     await session.commit()
     return {"procesadas": procesadas, "omitidas": omitidas}
@@ -612,6 +689,7 @@ async def dashboard_docente(
             "recursos_completados": e.progreso.recursos_completados,
             "engagement": e.engagement,
             "conceptos_en_riesgo": e.conceptos_en_riesgo,
+            "registrado_en_sward": e.registrado_en_sward,
             "ultima_actividad": (
                 e.progreso.ultima_actividad.isoformat()
                 if e.progreso.ultima_actividad
