@@ -64,14 +64,15 @@ class ConsultarDashboardDocenteUseCase:
             registrado)."""
             perfil = perfiles.get(str(p.estudiante_id))
             if perfil:
+                # `or ""` por si el perfil trae el campo en None (no solo ausente).
                 return (
-                    perfil.get("nombre", ""),
-                    perfil.get("apellido", ""),
-                    perfil.get("correo", ""),
+                    perfil.get("nombre") or "",
+                    perfil.get("apellido") or "",
+                    perfil.get("correo") or "",
                     True,
                 )
             # Solo en Moodle: el nombre viene completo (fullname) en p.nombre.
-            return (p.nombre, "", p.correo, False)
+            return (p.nombre or "", "", p.correo or "", False)
 
         resultado = []
         for p in progresos:
