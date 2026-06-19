@@ -469,6 +469,7 @@ async def get_concept_mastery(
                 sa_func.count(InteraccionModel.id).filter(
                     InteraccionModel.is_correct.is_(True)
                 ),
+                sa_func.avg(InteraccionModel.nota),
             )
             .where(
                 InteraccionModel.estudiante_id == student_id,
@@ -479,15 +480,21 @@ async def get_concept_mastery(
         )
     ).all()
     out = []
-    for concepto, total, correctas in rows:
+    for concepto, total, correctas, prom_nota in rows:
         total = int(total or 0)
         correctas = int(correctas or 0)
         if total == 0:
             continue
+        # Dominio continuo = promedio de la nota; fallback a % aciertos si no hay.
+        dominio = (
+            round(float(prom_nota), 1)
+            if prom_nota is not None
+            else round(correctas / total * 100, 1)
+        )
         out.append(
             {
                 "concepto": concepto,
-                "dominio": round(correctas / total * 100, 1),
+                "dominio": dominio,
                 "total": total,
                 "correctas": correctas,
             }
@@ -514,7 +521,7 @@ async def get_weekly_progress(
 
     rows = (
         await session.execute(
-            sa_select(InteraccionModel.is_correct)
+            sa_select(InteraccionModel.is_correct, InteraccionModel.nota)
             .where(
                 InteraccionModel.estudiante_id == student_id,
                 InteraccionModel.curso_id == courseId,
@@ -528,17 +535,16 @@ async def get_weekly_progress(
     etapas = min(6, n)
     tam = n / etapas
     acum_total = 0
-    acum_correct = 0
+    acum_nota = 0.0  # suma de notas (o 0/100 si no hay nota) para el promedio acumulado
     out = []
-    for i, (is_correct,) in enumerate(rows, start=1):
+    for i, (is_correct, nota) in enumerate(rows, start=1):
         acum_total += 1
-        if is_correct:
-            acum_correct += 1
+        acum_nota += float(nota) if nota is not None else (100.0 if is_correct else 0.0)
         if i >= round((len(out) + 1) * tam) or i == n:
             out.append(
                 {
                     "etapa": f"E{len(out) + 1}",
-                    "dominio": round(acum_correct / acum_total * 100, 1),
+                    "dominio": round(acum_nota / acum_total, 1),
                 }
             )
             if len(out) >= etapas:
@@ -559,6 +565,7 @@ class LmsInteraccionItem(BaseModel):
     correo: str = ""
     concepto: str = ""
     es_correcta: bool = False
+    nota: float = 0.0
     fecha_evento: datetime
     moodle_event_id: str = ""
 
@@ -616,9 +623,10 @@ async def lms_sync(
                 )
             ).scalar_one_or_none()
             if existente is not None:
-                # Idempotente pero auto-corrige: actualiza la corrección/concepto
+                # Idempotente pero auto-corrige: actualiza corrección/nota/concepto
                 # por si la nota en Moodle cambió o el registro venía incompleto.
                 existente.is_correct = item.es_correcta
+                existente.nota = item.nota
                 existente.concept_id = item.concepto or None
                 omitidas += 1
                 continue
@@ -635,6 +643,7 @@ async def lms_sync(
             actividad_id=_moodle_id("activity", item.moodle_activity_id),
             concept_id=item.concepto or None,
             is_correct=item.es_correcta,
+            nota=item.nota,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,
@@ -654,6 +663,7 @@ async def lms_sync(
                     sa_func.count(InteraccionModel.id).filter(
                         InteraccionModel.is_correct.is_(True)
                     ),
+                    sa_func.avg(InteraccionModel.nota),
                     sa_func.max(InteraccionModel.fecha),
                 ).where(
                     InteraccionModel.estudiante_id == est_id,
@@ -661,10 +671,21 @@ async def lms_sync(
                 )
             )
         ).one()
-        total, correctas, ultima = int(fila[0] or 0), int(fila[1] or 0), fila[2]
+        total, correctas, prom_nota, ultima = (
+            int(fila[0] or 0),
+            int(fila[1] or 0),
+            fila[2],
+            fila[3],
+        )
         if total == 0:
             continue
-        puntaje = round(correctas / total * 100, 1)
+        # Dominio = promedio de la nota real (continuo). Si no hay notas, cae al
+        # % de aciertos para no romper datos antiguos.
+        puntaje = (
+            round(float(prom_nota), 1)
+            if prom_nota is not None
+            else round(correctas / total * 100, 1)
+        )
         if puntaje < 40:
             riesgo = NivelRiesgo.CRITICO
         elif puntaje < 55:
