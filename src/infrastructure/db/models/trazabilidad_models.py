@@ -32,6 +32,8 @@ class InteraccionModel(Base):
     nota: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Enlace directo al módulo en Moodle (para abrirlo desde el panel docente).
     url_modulo: Mapped[str] = mapped_column(String(500), default="")
+    # Nombre real de la actividad en Moodle (p.ej. "Práctica 5: Normalización").
+    nombre_actividad: Mapped[str] = mapped_column(String(500), default="")
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True

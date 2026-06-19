@@ -65,6 +65,7 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
                 concept_id=m.concept_id,
                 is_correct=m.is_correct,
                 url_modulo=getattr(m, "url_modulo", "") or "",
+                nombre_actividad=getattr(m, "nombre_actividad", "") or "",
             )
             for m in r.scalars().all()
         ]
