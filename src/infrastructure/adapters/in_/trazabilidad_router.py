@@ -609,16 +609,18 @@ async def get_preferences(
     courseId: UUID = Query(..., description="UUID del curso"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Preferencias de formato del estudiante: en qué tipo de recurso de Moodle
-    (quiz, assign, page, url, resource, book…) rinde mejor.
+    """Preferencias de formato del estudiante, separadas en dos dimensiones:
 
-    Agrupa las interacciones por ``tipo_recurso`` (ignora las vacías) y calcula
-    el promedio de nota por tipo. Alimenta el motor de recomendación
-    personalizada para sugerir el formato que más le funciona a cada estudiante.
+    **RENDIMIENTO** (filas calificadas, ``es_vista = False``): en qué tipo de
+    recurso de Moodle (quiz, assign, page, url, resource, book…) rinde mejor.
+    Agrupa por ``tipo_recurso`` (ignora las vacías) y calcula el promedio de
+    nota por tipo. La nota usada por fila es ``nota``; si es ``None`` cae a 100
+    (acierto) o 0 (error). ``tipo_fuerte``/``tipo_debil`` solo consideran tipos
+    con señal mínima (total>=2); si ninguno la alcanza, usa el de mayor total.
 
-    La nota usada por fila es ``nota``; si es ``None`` cae a 100 (acierto) o 0
-    (error). ``tipo_fuerte``/``tipo_debil`` solo consideran tipos con señal
-    mínima (total>=2); si ninguno la alcanza, usa el de mayor total disponible.
+    **ENGAGEMENT** (filas de vista, ``es_vista = True``): qué formatos consume
+    más (``engagement_por_tipo``, ``formato_mas_consumido``) y qué recursos ya
+    vio (``recursos_vistos``), para que el frontend no re-recomiende lo visto.
     """
     from sqlalchemy import select as sa_select
 
@@ -630,6 +632,8 @@ async def get_preferences(
                 InteraccionModel.tipo_recurso,
                 InteraccionModel.nota,
                 InteraccionModel.is_correct,
+                InteraccionModel.es_vista,
+                InteraccionModel.url_modulo,
             ).where(
                 InteraccionModel.estudiante_id == student_id,
                 InteraccionModel.curso_id == courseId,
@@ -637,9 +641,21 @@ async def get_preferences(
         )
     ).all()
 
-    # tipo -> [suma de notas, total]
+    # RENDIMIENTO (calificadas): tipo -> [suma de notas, total]
     agregados: dict[str, list[float]] = {}
-    for tipo_recurso, nota, is_correct in rows:
+    # ENGAGEMENT (vistas): tipo -> count de vistas
+    vistas_por_tipo: dict[str, int] = {}
+    # Recursos ya vistos (url_modulo distintos, no vacíos).
+    recursos_vistos: list[str] = []
+    vistos_set: set[str] = set()
+    for tipo_recurso, nota, is_correct, es_vista, url_modulo in rows:
+        if es_vista:
+            if tipo_recurso:
+                vistas_por_tipo[tipo_recurso] = vistas_por_tipo.get(tipo_recurso, 0) + 1
+            if url_modulo and url_modulo not in vistos_set:
+                vistos_set.add(url_modulo)
+                recursos_vistos.append(url_modulo)
+            continue
         if not tipo_recurso:
             continue
         valor = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
@@ -669,10 +685,21 @@ async def get_preferences(
         min(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
     )
 
+    engagement_por_tipo = [
+        {"tipo": tipo, "vistas": vistas} for tipo, vistas in vistas_por_tipo.items()
+    ]
+    engagement_por_tipo.sort(key=lambda x: x["vistas"], reverse=True)
+    formato_mas_consumido = (
+        engagement_por_tipo[0]["tipo"] if engagement_por_tipo else ""
+    )
+
     return {
         "por_tipo": por_tipo,
         "tipo_fuerte": tipo_fuerte,
         "tipo_debil": tipo_debil,
+        "engagement_por_tipo": engagement_por_tipo,
+        "formato_mas_consumido": formato_mas_consumido,
+        "recursos_vistos": recursos_vistos,
     }
 
 
@@ -693,6 +720,7 @@ class LmsInteraccionItem(BaseModel):
     url_modulo: str = ""
     nombre_actividad: str = ""
     tipo_recurso: str = ""
+    es_vista: bool = False
     fecha_evento: datetime
     moodle_event_id: str = ""
 
@@ -761,6 +789,7 @@ async def lms_sync(
                     existente.nombre_actividad = item.nombre_actividad
                 if item.tipo_recurso:
                     existente.tipo_recurso = item.tipo_recurso
+                existente.es_vista = item.es_vista
                 omitidas += 1
                 continue
 
@@ -780,6 +809,7 @@ async def lms_sync(
             url_modulo=item.url_modulo,
             nombre_actividad=item.nombre_actividad,
             tipo_recurso=item.tipo_recurso,
+            es_vista=item.es_vista,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,
