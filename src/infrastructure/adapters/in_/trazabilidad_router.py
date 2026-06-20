@@ -504,6 +504,51 @@ async def get_concept_mastery(
     return out
 
 
+@router.get("/dashboard/platform-activity", status_code=status.HTTP_200_OK)
+async def platform_activity(
+    days: int = Query(7, ge=1, le=30, description="Días hacia atrás a incluir"),
+    courseId: UUID | None = Query(None, description="Filtra por curso (opcional)"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Actividad real de la plataforma: # de interacciones por día (últimos N días).
+
+    Alimenta el gráfico de actividad del panel de administración con datos
+    reales. Los días sin actividad se devuelven en cero (serie continua).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    hoy = datetime.now(timezone.utc).date()
+    desde = hoy - timedelta(days=days - 1)
+
+    condiciones = [sa_func.date(InteraccionModel.fecha) >= desde]
+    if courseId is not None:
+        condiciones.append(InteraccionModel.curso_id == courseId)
+
+    rows = (
+        await session.execute(
+            sa_select(
+                sa_func.date(InteraccionModel.fecha).label("dia"),
+                sa_func.count(InteraccionModel.id),
+            )
+            .where(*condiciones)
+            .group_by(sa_func.date(InteraccionModel.fecha))
+        )
+    ).all()
+    counts = {str(dia): int(total or 0) for dia, total in rows}
+
+    dias_es = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    out = []
+    for i in range(days):
+        d = desde + timedelta(days=i)
+        out.append({"day": f"{dias_es[d.weekday()]} {d.day:02d}", "sesiones": counts.get(str(d), 0)})
+    return out
+
+
 @router.get("/students/{student_id}/weekly-progress", status_code=status.HTTP_200_OK)
 async def get_weekly_progress(
     student_id: UUID = Path(..., description="UUID del estudiante"),
