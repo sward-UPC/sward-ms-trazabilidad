@@ -21,6 +21,7 @@ class ReporteClase:
     curso_id: UUID
     generado_en: datetime
     estudiantes: list[EstudianteDashboard]
+    curso_nombre: str = ""
 
     # Resumen agregado (calculado en __post_init__).
     total: int = 0
@@ -56,12 +57,16 @@ class GenerarReporteDocenteUseCase:
         self._renderer = renderer
 
     async def execute(
-        self, curso_id: UUID, generado_en: datetime | None = None
+        self,
+        curso_id: UUID,
+        generado_en: datetime | None = None,
+        curso_nombre: str | None = None,
     ) -> bytes:
         estudiantes = await self._dashboard.execute(curso_id)
         reporte = ReporteClase(
             curso_id=curso_id,
             generado_en=generado_en or datetime.now(timezone.utc),
             estudiantes=estudiantes,
+            curso_nombre=(curso_nombre or "").strip(),
         )
         return self._renderer.render(reporte)
