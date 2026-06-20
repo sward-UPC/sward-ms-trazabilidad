@@ -978,6 +978,9 @@ async def tendencia_docente(
 )
 async def reporte_docente_pdf(
     course_id: UUID = Path(..., description="UUID del curso"),
+    courseName: str | None = Query(
+        None, max_length=200, description="Nombre legible del curso para la cabecera"
+    ),
     uc: GenerarReporteDocenteUseCase = Depends(get_generar_reporte_docente_uc),
 ) -> StreamingResponse:
     """Genera y descarga el reporte de progreso de la clase en PDF.
@@ -987,7 +990,7 @@ async def reporte_docente_pdf(
 
     **Auth:** JWT | **Content-Type:** application/pdf
     """
-    pdf = await uc.execute(course_id)
+    pdf = await uc.execute(course_id, curso_nombre=courseName)
     filename = f"reporte_clase_{course_id}.pdf"
     return StreamingResponse(
         BytesIO(pdf),
