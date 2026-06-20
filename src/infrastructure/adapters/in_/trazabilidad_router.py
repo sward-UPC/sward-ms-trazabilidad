@@ -546,7 +546,12 @@ async def platform_activity(
     out = []
     for i in range(days):
         d = desde + timedelta(days=i)
-        out.append({"day": f"{dias_es[d.weekday()]} {d.day:02d}", "sesiones": counts.get(str(d), 0)})
+        out.append(
+            {
+                "day": f"{dias_es[d.weekday()]} {d.day:02d}",
+                "sesiones": counts.get(str(d), 0),
+            }
+        )
     return out
 
 
