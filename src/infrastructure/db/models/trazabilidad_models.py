@@ -37,6 +37,9 @@ class InteraccionModel(Base):
     # Tipo de módulo Moodle (assign, quiz, page, url, resource, book…), para
     # detectar en qué formato rinde mejor cada estudiante.
     tipo_recurso: Mapped[str] = mapped_column(String(50), default="")
+    # Vista de lectura/recurso no calificado (engagement) vs. interacción
+    # calificada (rendimiento). True = vista; False = calificada normal.
+    es_vista: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
