@@ -932,7 +932,7 @@ async def get_platform_metrics(
     }
 
 
-@internal_router.get("/internal/training-data", status_code=status.HTTP_200_OK)
+@internal_router.get("/dashboard/training-data", status_code=status.HTTP_200_OK)
 async def get_training_data(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
