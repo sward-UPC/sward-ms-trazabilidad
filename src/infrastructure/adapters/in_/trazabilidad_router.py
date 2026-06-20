@@ -932,6 +932,50 @@ async def get_platform_metrics(
     }
 
 
+@internal_router.get("/internal/training-data", status_code=status.HTTP_200_OK)
+async def get_training_data(
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Dataset de entrenamiento para el modelo SAKT (knowledge tracing, s2s).
+
+    Devuelve TODAS las interacciones calificadas (``es_vista = False``) con
+    ``concept_id`` no vacío, ordenadas por estudiante y por fecha, en el formato
+    que consume el pipeline de entrenamiento offline de ms-recomendacion. Puede
+    ser un payload grande; es de uso batch/offline.
+
+    **Auth:** X-Service-Key
+    """
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    rows = (
+        await session.execute(
+            sa_select(
+                InteraccionModel.estudiante_id,
+                InteraccionModel.concept_id,
+                InteraccionModel.is_correct,
+                InteraccionModel.fecha,
+            )
+            .where(
+                InteraccionModel.concept_id.isnot(None),
+                InteraccionModel.concept_id != "",
+                InteraccionModel.es_vista.is_(False),
+            )
+            .order_by(InteraccionModel.estudiante_id, InteraccionModel.fecha)
+        )
+    ).all()
+    return [
+        {
+            "estudiante_id": str(estudiante_id),
+            "concepto": concepto,
+            "correcta": bool(correcta),
+            "orden": fecha.isoformat(),
+        }
+        for estudiante_id, concepto, correcta, fecha in rows
+    ]
+
+
 @router.get(
     "/dashboard/teacher/{course_id}/students-progress",
     status_code=status.HTTP_200_OK,
