@@ -34,6 +34,9 @@ class InteraccionModel(Base):
     url_modulo: Mapped[str] = mapped_column(String(500), default="")
     # Nombre real de la actividad en Moodle (p.ej. "Práctica 5: Normalización").
     nombre_actividad: Mapped[str] = mapped_column(String(500), default="")
+    # Tipo de módulo Moodle (assign, quiz, page, url, resource, book…), para
+    # detectar en qué formato rinde mejor cada estudiante.
+    tipo_recurso: Mapped[str] = mapped_column(String(50), default="")
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True

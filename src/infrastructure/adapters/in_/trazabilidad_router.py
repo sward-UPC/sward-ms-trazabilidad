@@ -416,6 +416,7 @@ async def _get_interactions_handler(
             "curso_id": str(i.curso_id),
             "url_modulo": i.url_modulo,
             "nombre_actividad": i.nombre_actividad,
+            "tipo_recurso": i.tipo_recurso,
         }
         for i in items
     ]
@@ -602,6 +603,79 @@ async def get_weekly_progress(
     return out
 
 
+@router.get("/students/{student_id}/preferences", status_code=status.HTTP_200_OK)
+async def get_preferences(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Preferencias de formato del estudiante: en qué tipo de recurso de Moodle
+    (quiz, assign, page, url, resource, book…) rinde mejor.
+
+    Agrupa las interacciones por ``tipo_recurso`` (ignora las vacías) y calcula
+    el promedio de nota por tipo. Alimenta el motor de recomendación
+    personalizada para sugerir el formato que más le funciona a cada estudiante.
+
+    La nota usada por fila es ``nota``; si es ``None`` cae a 100 (acierto) o 0
+    (error). ``tipo_fuerte``/``tipo_debil`` solo consideran tipos con señal
+    mínima (total>=2); si ninguno la alcanza, usa el de mayor total disponible.
+    """
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    rows = (
+        await session.execute(
+            sa_select(
+                InteraccionModel.tipo_recurso,
+                InteraccionModel.nota,
+                InteraccionModel.is_correct,
+            ).where(
+                InteraccionModel.estudiante_id == student_id,
+                InteraccionModel.curso_id == courseId,
+            )
+        )
+    ).all()
+
+    # tipo -> [suma de notas, total]
+    agregados: dict[str, list[float]] = {}
+    for tipo_recurso, nota, is_correct in rows:
+        if not tipo_recurso:
+            continue
+        valor = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
+        acc = agregados.setdefault(tipo_recurso, [0.0, 0.0])
+        acc[0] += valor
+        acc[1] += 1
+
+    por_tipo = [
+        {
+            "tipo": tipo,
+            "promedio": round(suma / total, 1),
+            "total": int(total),
+        }
+        for tipo, (suma, total) in agregados.items()
+    ]
+    por_tipo.sort(key=lambda x: x["promedio"], reverse=True)
+
+    # tipo_fuerte/debil: prioriza tipos con señal mínima (total>=2); si ninguno
+    # llega, usa el de mayor total disponible.
+    candidatos = [p for p in por_tipo if p["total"] >= 2]
+    if not candidatos and por_tipo:
+        candidatos = [max(por_tipo, key=lambda x: x["total"])]
+    tipo_fuerte = (
+        max(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
+    )
+    tipo_debil = (
+        min(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
+    )
+
+    return {
+        "por_tipo": por_tipo,
+        "tipo_fuerte": tipo_fuerte,
+        "tipo_debil": tipo_debil,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Schemas para el endpoint interno de sincronización LMS
 # ---------------------------------------------------------------------------
@@ -618,6 +692,7 @@ class LmsInteraccionItem(BaseModel):
     nota: float = 0.0
     url_modulo: str = ""
     nombre_actividad: str = ""
+    tipo_recurso: str = ""
     fecha_evento: datetime
     moodle_event_id: str = ""
 
@@ -684,6 +759,8 @@ async def lms_sync(
                     existente.url_modulo = item.url_modulo
                 if item.nombre_actividad:
                     existente.nombre_actividad = item.nombre_actividad
+                if item.tipo_recurso:
+                    existente.tipo_recurso = item.tipo_recurso
                 omitidas += 1
                 continue
 
@@ -702,6 +779,7 @@ async def lms_sync(
             nota=item.nota,
             url_modulo=item.url_modulo,
             nombre_actividad=item.nombre_actividad,
+            tipo_recurso=item.tipo_recurso,
             tipo=tipo.value,
             fecha=fecha,
             moodle_event_id=item.moodle_event_id,

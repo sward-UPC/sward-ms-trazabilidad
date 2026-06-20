@@ -31,3 +31,5 @@ class InteraccionAcademica:
     url_modulo: str = ""
     # Nombre real de la actividad en Moodle (p.ej. "Práctica 5: Normalización").
     nombre_actividad: str = ""
+    # Tipo de módulo Moodle (assign, quiz, page, url, resource, book…).
+    tipo_recurso: str = ""
