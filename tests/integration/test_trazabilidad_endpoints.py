@@ -118,6 +118,12 @@ async def test_dashboard_docente_lista_progreso_del_curso(client):
 # concept-mastery y weekly-progress), por lo que no se cubre con el conftest de
 # fakes (que solo override use cases). Se valida end-to-end contra la DB real.
 
+# NOTA: el endpoint /students/{id}/preferences (preferencias de formato por
+# tipo_recurso para el motor de recomendación) también lee las interacciones
+# reales vía get_session, igual que concept-mastery/weekly-progress. El conftest
+# de fakes no override get_session, así que no se cubre aquí; se valida
+# end-to-end contra la DB real.
+
 
 @pytest.mark.asyncio
 async def test_reporte_docente_genera_pdf(client):
