@@ -113,27 +113,10 @@ async def test_dashboard_docente_lista_progreso_del_curso(client):
     assert all(p["engagement"] == 5 for p in progresos)
 
 
-@pytest.mark.asyncio
-async def test_tendencia_docente_agrega_por_semana(client):
-    curso = str(uuid4())
-    for _ in range(3):
-        await client.post(
-            INTERACTIONS,
-            json={
-                "estudiante_id": str(uuid4()),
-                "curso_id": curso,
-                "tipo": "respuesta",
-                "puntaje": 50.0,
-            },
-        )
-
-    resp = await client.get(f"/dashboard/teacher/{curso}/trend")
-    assert resp.status_code == 200
-    puntos = resp.json()
-    # Todas las interacciones son de esta semana → 1 punto histórico.
-    assert len(puntos) == 1
-    assert puntos[0]["promedio"] >= 0
-    assert "week" in puntos[0] and "riesgoAlto" in puntos[0]
+# NOTA: el endpoint /dashboard/teacher/{curso}/trend ahora calcula la tendencia
+# por etapas leyendo las interacciones reales vía get_session (igual que
+# concept-mastery y weekly-progress), por lo que no se cubre con el conftest de
+# fakes (que solo override use cases). Se valida end-to-end contra la DB real.
 
 
 @pytest.mark.asyncio
