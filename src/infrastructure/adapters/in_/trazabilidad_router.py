@@ -19,7 +19,6 @@ from src.application.use_cases.consultar_progreso import (
     ConsultarProgresoCommand,
     ConsultarProgresoUseCase,
 )
-from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -39,7 +38,6 @@ from src.infrastructure.db.database import get_session
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
-    get_consultar_tendencia_uc,
     get_dashboard_docente_uc,
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
@@ -907,17 +905,63 @@ class TendenciaResponse(BaseModel):
 )
 async def tendencia_docente(
     course_id: UUID = Path(..., description="UUID del curso"),
-    uc: ConsultarTendenciaUseCase = Depends(get_consultar_tendencia_uc),
+    session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    """Tendencia semanal del curso a partir del historial real de progreso.
+    """Tendencia del curso: dominio promedio acumulado y nº de estudiantes en
+    riesgo, a lo largo de la secuencia de actividades (hasta 6 etapas).
 
-    **Auth:** JWT
+    Igual que la evolución por estudiante, se usa la SECUENCIA (no semanas
+    calendario) porque las notas de Moodle no traen fecha de envío fiable y el
+    historial de snapshots solo crece con el tiempo. Así la curva refleja datos
+    reales desde la primera sincronización. **Auth:** JWT
     """
-    puntos = await uc.execute(course_id)
-    return [
-        {"week": p.week, "promedio": p.promedio, "riesgoAlto": p.riesgo_alto}
-        for p in puntos
-    ]
+    from collections import defaultdict
+
+    from sqlalchemy import select as sa_select
+
+    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
+
+    rows = (
+        await session.execute(
+            sa_select(
+                InteraccionModel.estudiante_id,
+                InteraccionModel.is_correct,
+                InteraccionModel.nota,
+            )
+            .where(InteraccionModel.curso_id == course_id)
+            .order_by(InteraccionModel.fecha, InteraccionModel.id)
+        )
+    ).all()
+    n = len(rows)
+    if n == 0:
+        return []
+
+    etapas = min(6, n)
+    tam = n / etapas
+    suma_est: dict = defaultdict(float)  # suma de notas por estudiante
+    cnt_est: dict = defaultdict(int)
+    total_nota = 0.0
+    total_cnt = 0
+    out: list[dict] = []
+    for i, (est_id, is_correct, nota) in enumerate(rows, start=1):
+        val = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
+        suma_est[est_id] += val
+        cnt_est[est_id] += 1
+        total_nota += val
+        total_cnt += 1
+        if i >= round((len(out) + 1) * tam) or i == n:
+            # Estudiantes en riesgo alto = dominio acumulado < 50.
+            en_riesgo = sum(1 for e in cnt_est if suma_est[e] / cnt_est[e] < 50)
+            out.append(
+                {
+                    "week": f"Sem {len(out) + 1}",
+                    "promedio": round(total_nota / total_cnt, 1),
+                    "riesgoAlto": en_riesgo,
+                }
+            )
+            if len(out) >= etapas:
+                break
+    return out
 
 
 @router.get(
