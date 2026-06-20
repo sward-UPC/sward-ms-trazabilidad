@@ -96,14 +96,18 @@ class PdfReporteRenderer(ReporteRendererPort):
         )
 
         fecha = reporte.generado_en.strftime("%d/%m/%Y %H:%M UTC")
+        curso_label = reporte.curso_nombre or str(reporte.curso_id)
         elems = [
             Paragraph("SWARD", h1),
             Paragraph("Reporte de Progreso de Clase — Trazabilidad Docente", sub),
             Spacer(1, 4),
-            Paragraph(f"Curso: <b>{reporte.curso_id}</b>", meta),
-            Paragraph(f"Generado: {fecha}", meta),
-            Spacer(1, 10),
+            Paragraph(f"Curso: <b>{curso_label}</b>", meta),
         ]
+        # Con nombre legible, el UUID pasa a ser una referencia técnica pequeña.
+        if reporte.curso_nombre:
+            elems.append(Paragraph(f"ID del curso: {reporte.curso_id}", meta))
+        elems.append(Paragraph(f"Generado: {fecha}", meta))
+        elems.append(Spacer(1, 10))
 
         # ── Resumen ──────────────────────────────────────────────
         elems.append(Paragraph("Resumen", section))
