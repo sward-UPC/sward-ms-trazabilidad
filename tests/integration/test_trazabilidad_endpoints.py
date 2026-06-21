@@ -176,3 +176,69 @@ async def test_registrar_feedback_tipo_invalido_es_422(client):
         },
     )
     assert resp.status_code == 422
+
+
+QUIZ_RESULT = "/interactions/quiz-result"
+
+
+@pytest.mark.asyncio
+async def test_quiz_result_devuelve_201_y_calcula_nota(client):
+    resp = await client.post(
+        QUIZ_RESULT,
+        json={
+            "curso_id": CURSO,
+            "concepto": "Semana 1-2: Fundamentos de Algoritmos",
+            "total_preguntas": 4,
+            "correctas": 3,
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["registrado"] is True
+    assert body["nota"] == 75.0
+    assert body["is_correct"] is True
+
+
+@pytest.mark.asyncio
+async def test_quiz_result_reprobado_marca_is_correct_false(client):
+    resp = await client.post(
+        QUIZ_RESULT,
+        json={
+            "curso_id": CURSO,
+            "concepto": "Semana 3: Recursividad",
+            "total_preguntas": 4,
+            "correctas": 1,
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["nota"] == 25.0
+    assert body["is_correct"] is False
+
+
+@pytest.mark.asyncio
+async def test_quiz_result_correctas_mayor_total_es_422(client):
+    resp = await client.post(
+        QUIZ_RESULT,
+        json={
+            "curso_id": CURSO,
+            "concepto": "Semana 1",
+            "total_preguntas": 2,
+            "correctas": 5,
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_quiz_result_sin_token_retorna_401(anon_client):
+    resp = await anon_client.post(
+        QUIZ_RESULT,
+        json={
+            "curso_id": CURSO,
+            "concepto": "Semana 1",
+            "total_preguntas": 4,
+            "correctas": 3,
+        },
+    )
+    assert resp.status_code == 401
