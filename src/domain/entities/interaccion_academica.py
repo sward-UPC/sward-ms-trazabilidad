@@ -27,6 +27,11 @@ class InteraccionAcademica:
     # Concepto/skill (sección Moodle) y corrección, para secuencias SAKT.
     concept_id: str | None = None
     is_correct: bool | None = None
+    # Nota numérica 0-100 (dominio continuo por sección).
+    nota: float | None = None
+    # Vista no calificada (engagement) vs. interacción calificada (rendimiento).
+    # False = calificada (entra al training del SAKT, que filtra es_vista=False).
+    es_vista: bool = False
     # Enlace directo al módulo en Moodle.
     url_modulo: str = ""
     # Nombre real de la actividad en Moodle (p.ej. "Práctica 5: Normalización").

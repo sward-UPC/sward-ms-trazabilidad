@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sward_shared.identidad import moodle_uuid as _moodle_id
 
@@ -30,6 +30,10 @@ from src.application.use_cases.registrar_interaccion import (
     RegistrarInteraccionCommand,
     RegistrarInteraccionUseCase,
 )
+from src.application.use_cases.registrar_quiz_result import (
+    RegistrarQuizResultCommand,
+    RegistrarQuizResultUseCase,
+)
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
@@ -42,6 +46,7 @@ from src.infrastructure.dependencies import (
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
+    get_registrar_quiz_result_uc,
     get_trazabilidad_repo,
     require_jwt,
     require_service_key,
@@ -298,6 +303,105 @@ async def registrar_interaccion(
     """
     i = await uc.execute(RegistrarInteraccionCommand(**body.model_dump()))
     return {"id": str(i.id), "tipo": i.tipo, "fecha": i.fecha.isoformat()}
+
+
+class QuizResultRequest(BaseModel):
+    """Resultado de un quiz/práctica generado por el motor de recomendación.
+
+    El ``estudiante_id`` NO va en el body: se toma del JWT (claim ``sub``).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "curso_id": "550e8400-e29b-41d4-a716-446655440001",
+                "concepto": "Semana 1-2: Fundamentos de Algoritmos",
+                "total_preguntas": 4,
+                "correctas": 3,
+                "tipo_recurso": "quiz_generado",
+            }
+        },
+    )
+
+    curso_id: UUID = Field(
+        description="UUID del curso", example="550e8400-e29b-41d4-a716-446655440001"
+    )
+    concepto: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Concepto/sección Moodle evaluado",
+        example="Semana 1-2: Fundamentos de Algoritmos",
+    )
+    total_preguntas: int = Field(
+        gt=0, le=100, description="Total de preguntas del quiz", example=4
+    )
+    correctas: int = Field(
+        ge=0, le=100, description="Preguntas respondidas correctamente", example=3
+    )
+    tipo_recurso: str = Field(
+        default="quiz_generado",
+        max_length=50,
+        description="Tipo de recurso (modname Moodle); por defecto quiz_generado",
+        example="quiz_generado",
+    )
+
+    @model_validator(mode="after")
+    def _validar_correctas(self) -> "QuizResultRequest":
+        if self.correctas > self.total_preguntas:
+            raise ValueError("correctas no puede superar total_preguntas")
+        return self
+
+
+class QuizResultResponse(BaseModel):
+    """Confirmación del registro del resultado del quiz."""
+
+    registrado: bool = Field(description="True si se registró la interacción")
+    nota: float = Field(description="Nota calculada 0-100", example=75.0)
+    is_correct: bool = Field(
+        description="True si la nota alcanza el umbral de aprobación", example=True
+    )
+
+
+@router.post(
+    "/interactions/quiz-result",
+    status_code=status.HTTP_201_CREATED,
+    response_model=QuizResultResponse,
+    responses={
+        201: {"description": "Resultado del quiz registrado como interacción"},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        422: {"description": "Datos inválidos (p.ej. correctas > total_preguntas)."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
+async def registrar_quiz_result(
+    body: QuizResultRequest,
+    user: dict = Depends(require_jwt),
+    uc: RegistrarQuizResultUseCase = Depends(get_registrar_quiz_result_uc),
+) -> QuizResultResponse:
+    """Registra el resultado de un quiz/práctica generado como interacción CALIFICADA.
+
+    Cierra el loop de feedback del SAKT: la interacción entra al dataset de
+    entrenamiento (``es_vista=False``, ``concept_id`` poblado). El
+    ``estudiante_id`` se toma del JWT (claim ``sub``), nunca del body.
+
+    **Auth:** JWT (estudiante)
+    """
+    guardada = await uc.execute(
+        RegistrarQuizResultCommand(
+            estudiante_id=UUID(user["sub"]),
+            curso_id=body.curso_id,
+            concepto=body.concepto,
+            total_preguntas=body.total_preguntas,
+            correctas=body.correctas,
+            tipo_recurso=body.tipo_recurso,
+        )
+    )
+    return QuizResultResponse(
+        registrado=True,
+        nota=guardada.nota if guardada.nota is not None else 0.0,
+        is_correct=bool(guardada.is_correct),
+    )
 
 
 @router.get(

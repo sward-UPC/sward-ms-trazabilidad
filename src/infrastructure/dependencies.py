@@ -15,6 +15,7 @@ from src.application.use_cases.generar_reporte_docente import (
 )
 from src.application.use_cases.registrar_feedback import RegistrarFeedbackUseCase
 from src.application.use_cases.registrar_interaccion import RegistrarInteraccionUseCase
+from src.application.use_cases.registrar_quiz_result import RegistrarQuizResultUseCase
 from src.infrastructure.adapters.out_.eventbridge_adapter import EventBridgeAdapter
 from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
@@ -41,6 +42,13 @@ def get_registrar_interaccion_uc(
     events: EventBridgeAdapter = Depends(get_eventbridge_adapter),
 ) -> RegistrarInteraccionUseCase:
     return RegistrarInteraccionUseCase(TrazabilidadPostgresAdapter(session), events)
+
+
+def get_registrar_quiz_result_uc(
+    session: AsyncSession = Depends(get_session),
+    events: EventBridgeAdapter = Depends(get_eventbridge_adapter),
+) -> RegistrarQuizResultUseCase:
+    return RegistrarQuizResultUseCase(TrazabilidadPostgresAdapter(session), events)
 
 
 def get_consultar_progreso_uc(
