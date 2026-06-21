@@ -38,6 +38,7 @@ from src.application.use_cases.registrar_material_completado import (
     RegistrarMaterialCompletadoCommand,
     RegistrarMaterialCompletadoUseCase,
 )
+from src.application.use_cases.consultar_racha import ConsultarRachaUseCase
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
@@ -52,6 +53,7 @@ from src.infrastructure.dependencies import (
     get_registrar_interaccion_uc,
     get_registrar_quiz_result_uc,
     get_registrar_material_completado_uc,
+    get_consultar_racha_uc,
     get_trazabilidad_repo,
     require_jwt,
     require_service_key,
@@ -633,6 +635,22 @@ async def get_interactions(
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
     return await _get_interactions_handler(student_id, courseId, limit, repo)
+
+
+@router.get("/students/{student_id}/streak", status_code=status.HTTP_200_OK)
+async def get_streak(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    uc: ConsultarRachaUseCase = Depends(get_consultar_racha_uc),
+):
+    """Racha GLOBAL de días consecutivos con actividad (en todos los cursos).
+
+    La racha de estudio no es por curso: cualquier interacción del alumno cuenta.
+    Solo vive si el último día activo es hoy o ayer (hora de Perú).
+
+    **Auth:** JWT
+    """
+    dias = await uc.execute(student_id)
+    return {"dias_racha": dias}
 
 
 @router.get("/students/{student_id}/concept-mastery", status_code=status.HTTP_200_OK)
