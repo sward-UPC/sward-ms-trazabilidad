@@ -34,6 +34,10 @@ from src.application.use_cases.registrar_quiz_result import (
     RegistrarQuizResultCommand,
     RegistrarQuizResultUseCase,
 )
+from src.application.use_cases.registrar_material_completado import (
+    RegistrarMaterialCompletadoCommand,
+    RegistrarMaterialCompletadoUseCase,
+)
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
@@ -47,6 +51,7 @@ from src.infrastructure.dependencies import (
     get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     get_registrar_quiz_result_uc,
+    get_registrar_material_completado_uc,
     get_trazabilidad_repo,
     require_jwt,
     require_service_key,
@@ -401,6 +406,87 @@ async def registrar_quiz_result(
         registrado=True,
         nota=guardada.nota if guardada.nota is not None else 0.0,
         is_correct=bool(guardada.is_correct),
+    )
+
+
+class MaterialCompletadoRequest(BaseModel):
+    """Un recurso generado (práctica/lectura/video) que el estudiante completó.
+
+    El ``estudiante_id`` NO va en el body: se toma del JWT (claim ``sub``).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "curso_id": "550e8400-e29b-41d4-a716-446655440001",
+                "concepto": "Semana 1-2: Fundamentos de Algoritmos",
+                "tipo": "practica",
+                "aprobado": True,
+            }
+        },
+    )
+
+    curso_id: UUID = Field(description="UUID del curso")
+    concepto: str = Field(
+        min_length=1, max_length=255, description="Concepto/sección Moodle"
+    )
+    tipo: str = Field(description="practica | lectura | video")
+    aprobado: bool = Field(default=True, description="Solo aplica a práctica")
+
+    @model_validator(mode="after")
+    def _validar_tipo(self) -> "MaterialCompletadoRequest":
+        if self.tipo not in ("practica", "lectura", "video"):
+            raise ValueError("tipo debe ser practica, lectura o video")
+        return self
+
+
+class MaterialCompletadoResponse(BaseModel):
+    registrado: bool = Field(description="True si se registró la interacción")
+    es_vista: bool = Field(
+        description="True si fue una vista (lectura/video); False si calificada"
+    )
+
+
+@router.post(
+    "/interactions/material-completed",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MaterialCompletadoResponse,
+    responses={
+        201: {"description": "Recurso completado registrado como interacción"},
+        401: {"description": "No autorizado. JWT inválido o expirado."},
+        422: {"description": "Datos inválidos (tipo desconocido)."},
+        500: {"description": "Error interno del servidor."},
+    },
+)
+async def registrar_material_completado(
+    body: MaterialCompletadoRequest,
+    user: dict = Depends(require_jwt),
+    uc: RegistrarMaterialCompletadoUseCase = Depends(
+        get_registrar_material_completado_uc
+    ),
+) -> MaterialCompletadoResponse:
+    """Registra un recurso generado completado como interacción.
+
+    - **práctica** → calificada (``es_vista=False``) → alimenta el SAKT.
+    - **lectura / video** → vista (``es_vista=True``) → señal de preferencia.
+
+    El ``estudiante_id`` se toma del JWT (claim ``sub``), nunca del body.
+
+    **Auth:** JWT (estudiante)
+    """
+    guardada = await uc.execute(
+        RegistrarMaterialCompletadoCommand(
+            estudiante_id=UUID(user["sub"]),
+            curso_id=body.curso_id,
+            concepto=body.concepto,
+            tipo=body.tipo,
+            aprobado=body.aprobado,
+        )
+    )
+    return MaterialCompletadoResponse(
+        registrado=True,
+        es_vista=bool(guardada.es_vista),
     )
 
 
