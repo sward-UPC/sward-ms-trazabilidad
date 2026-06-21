@@ -23,6 +23,7 @@ from src.application.use_cases.generar_reporte_docente import (
 )
 from src.application.use_cases.registrar_feedback import RegistrarFeedbackUseCase
 from src.application.use_cases.registrar_interaccion import RegistrarInteraccionUseCase
+from src.application.use_cases.registrar_quiz_result import RegistrarQuizResultUseCase
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import (
     IndicadorTrazabilidad,
@@ -43,6 +44,7 @@ from src.infrastructure.dependencies import (
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
+    get_registrar_quiz_result_uc,
     require_jwt,
 )
 
@@ -152,6 +154,9 @@ async def client():
 
     app.dependency_overrides[get_registrar_interaccion_uc] = lambda: (
         RegistrarInteraccionUseCase(repo, events)
+    )
+    app.dependency_overrides[get_registrar_quiz_result_uc] = lambda: (
+        RegistrarQuizResultUseCase(repo, events)
     )
     app.dependency_overrides[get_consultar_progreso_uc] = lambda: (
         ConsultarProgresoUseCase(repo)
