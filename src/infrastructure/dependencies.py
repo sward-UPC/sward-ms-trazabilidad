@@ -19,6 +19,7 @@ from src.application.use_cases.registrar_quiz_result import RegistrarQuizResultU
 from src.application.use_cases.registrar_material_completado import (
     RegistrarMaterialCompletadoUseCase,
 )
+from src.application.use_cases.consultar_racha import ConsultarRachaUseCase
 from src.infrastructure.adapters.out_.eventbridge_adapter import EventBridgeAdapter
 from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
@@ -61,6 +62,12 @@ def get_registrar_material_completado_uc(
     return RegistrarMaterialCompletadoUseCase(
         TrazabilidadPostgresAdapter(session), events
     )
+
+
+def get_consultar_racha_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarRachaUseCase:
+    return ConsultarRachaUseCase(TrazabilidadPostgresAdapter(session))
 
 
 def get_consultar_progreso_uc(
