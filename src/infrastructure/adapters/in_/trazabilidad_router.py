@@ -811,13 +811,10 @@ async def get_weekly_progress(
     return out
 
 
-@router.get("/students/{student_id}/preferences", status_code=status.HTTP_200_OK)
-async def get_preferences(
-    student_id: UUID = Path(..., description="UUID del estudiante"),
-    courseId: UUID = Query(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
-):
-    """Preferencias de formato del estudiante, separadas en dos dimensiones:
+async def _calcular_preferencias(
+    session: AsyncSession, student_id: UUID, course_id: UUID
+) -> dict:
+    """Preferencias de formato del estudiante, separadas en dos dimensiones.
 
     **RENDIMIENTO** (filas calificadas, ``es_vista = False``): en qué tipo de
     recurso de Moodle (quiz, assign, page, url, resource, book…) rinde mejor.
@@ -828,7 +825,9 @@ async def get_preferences(
 
     **ENGAGEMENT** (filas de vista, ``es_vista = True``): qué formatos consume
     más (``engagement_por_tipo``, ``formato_mas_consumido``) y qué recursos ya
-    vio (``recursos_vistos``), para que el frontend no re-recomiende lo visto.
+    vio (``recursos_vistos``), para que el consumidor no re-recomiende lo visto.
+
+    Reusado por la ruta JWT (frontend) y la interna (s2s con ms-recomendacion).
     """
     from sqlalchemy import select as sa_select
 
@@ -844,7 +843,7 @@ async def get_preferences(
                 InteraccionModel.url_modulo,
             ).where(
                 InteraccionModel.estudiante_id == student_id,
-                InteraccionModel.curso_id == courseId,
+                InteraccionModel.curso_id == course_id,
             )
         )
     ).all()
@@ -911,6 +910,19 @@ async def get_preferences(
     }
 
 
+@router.get("/students/{student_id}/preferences", status_code=status.HTTP_200_OK)
+async def get_preferences(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Preferencia de formato del estudiante (en qué tipo de recurso rinde mejor).
+
+    **Auth:** JWT
+    """
+    return await _calcular_preferencias(session, student_id, courseId)
+
+
 # ---------------------------------------------------------------------------
 # Schemas para el endpoint interno de sincronización LMS
 # ---------------------------------------------------------------------------
@@ -941,6 +953,22 @@ class LmsSyncRequest(BaseModel):
 internal_router = APIRouter(
     tags=["LMS — Interno"], dependencies=[Depends(require_service_key)]
 )
+
+
+@internal_router.get("/internal/students/{student_id}/preferences")
+async def get_preferences_internal(
+    student_id: UUID = Path(..., description="UUID del estudiante"),
+    courseId: UUID = Query(..., description="UUID del curso"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Gemelo interno de ``/students/{id}/preferences`` para consumo s2s.
+
+    Lo usa ms-recomendacion para que el motor SAKT priorice el formato en el que
+    el estudiante rinde/consume mejor.
+
+    **Auth:** X-Service-Key
+    """
+    return await _calcular_preferencias(session, student_id, courseId)
 
 
 @internal_router.post("/internal/lms-sync", status_code=202)
