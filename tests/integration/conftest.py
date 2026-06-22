@@ -174,7 +174,7 @@ async def client():
         )
     )
     app.dependency_overrides[get_registrar_feedback_uc] = lambda: (
-        RegistrarFeedbackUseCase(repo)
+        RegistrarFeedbackUseCase(repo, events)
     )
     app.dependency_overrides[get_consultar_tendencia_uc] = lambda: (
         ConsultarTendenciaUseCase(repo)
