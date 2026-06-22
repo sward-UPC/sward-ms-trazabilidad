@@ -19,7 +19,9 @@ class RegistrarFeedbackCommand:
 
 
 class RegistrarFeedbackUseCase:
-    def __init__(self, repo: TrazabilidadRepositoryPort, event_publisher: EventPublisherPort):
+    def __init__(
+        self, repo: TrazabilidadRepositoryPort, event_publisher: EventPublisherPort
+    ):
         self._repo = repo
         self._event_publisher = event_publisher
 
