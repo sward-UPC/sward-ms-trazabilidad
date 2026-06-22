@@ -101,8 +101,9 @@ def get_generar_reporte_docente_uc(
 
 def get_registrar_feedback_uc(
     session: AsyncSession = Depends(get_session),
+    events: EventBridgeAdapter = Depends(get_eventbridge_adapter),
 ) -> RegistrarFeedbackUseCase:
-    return RegistrarFeedbackUseCase(TrazabilidadPostgresAdapter(session))
+    return RegistrarFeedbackUseCase(TrazabilidadPostgresAdapter(session), events)
 
 
 def get_consultar_tendencia_uc(
