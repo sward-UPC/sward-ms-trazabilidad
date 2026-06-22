@@ -1192,6 +1192,7 @@ async def get_training_data(
                 InteraccionModel.concept_id,
                 InteraccionModel.is_correct,
                 InteraccionModel.fecha,
+                InteraccionModel.tipo_recurso,
             )
             .where(
                 InteraccionModel.concept_id.isnot(None),
@@ -1201,14 +1202,17 @@ async def get_training_data(
             .order_by(InteraccionModel.estudiante_id, InteraccionModel.fecha)
         )
     ).all()
+    # `tipo_recurso` habilita el SAKT format-aware (skill concepto×formato) y el
+    # análisis pedagógico por formato; los pipelines viejos ignoran el campo extra.
     return [
         {
             "estudiante_id": str(estudiante_id),
             "concepto": concepto,
             "correcta": bool(correcta),
             "orden": fecha.isoformat(),
+            "tipo_recurso": tipo_recurso or "",
         }
-        for estudiante_id, concepto, correcta, fecha in rows
+        for estudiante_id, concepto, correcta, fecha, tipo_recurso in rows
     ]
 
 
