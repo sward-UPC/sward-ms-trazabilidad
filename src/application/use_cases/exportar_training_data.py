@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 

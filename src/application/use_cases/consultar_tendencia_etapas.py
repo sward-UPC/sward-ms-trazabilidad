@@ -2,7 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 
