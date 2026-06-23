@@ -17,7 +17,6 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
-from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -39,7 +38,6 @@ from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRend
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
-    get_consultar_tendencia_uc,
     get_dashboard_docente_uc,
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
@@ -212,9 +210,6 @@ async def client():
     )
     app.dependency_overrides[get_registrar_feedback_uc] = lambda: (
         RegistrarFeedbackUseCase(repo, events)
-    )
-    app.dependency_overrides[get_consultar_tendencia_uc] = lambda: (
-        ConsultarTendenciaUseCase(repo)
     )
     # Sobreescribe la validación JWT por un payload fake (autenticación simulada).
     app.dependency_overrides[require_jwt] = lambda: FAKE_PAYLOAD

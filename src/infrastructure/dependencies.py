@@ -9,7 +9,6 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
-from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -126,10 +125,52 @@ def get_registrar_feedback_uc(
     return RegistrarFeedbackUseCase(TrazabilidadPostgresAdapter(session), events)
 
 
-def get_consultar_tendencia_uc(
+def get_consultar_preferencias_uc(
     session: AsyncSession = Depends(get_session),
-) -> ConsultarTendenciaUseCase:
-    return ConsultarTendenciaUseCase(TrazabilidadPostgresAdapter(session))
+) -> ConsultarPreferenciasUseCase:
+    return ConsultarPreferenciasUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_consultar_concepto_mastery_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarConceptoMasteryUseCase:
+    return ConsultarConceptoMasteryUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_consultar_actividad_plataforma_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarActividadPlataformaUseCase:
+    return ConsultarActividadPlataformaUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_consultar_evolucion_estudiante_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarEvolucionEstudianteUseCase:
+    return ConsultarEvolucionEstudianteUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_consultar_tendencia_etapas_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarTendenciaEtapasUseCase:
+    return ConsultarTendenciaEtapasUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_consultar_metricas_plataforma_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ConsultarMetricasPlataformaUseCase:
+    return ConsultarMetricasPlataformaUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_exportar_training_data_uc(
+    session: AsyncSession = Depends(get_session),
+) -> ExportarTrainingDataUseCase:
+    return ExportarTrainingDataUseCase(TrazabilidadPostgresAdapter(session))
+
+
+def get_sincronizar_lms_uc(
+    session: AsyncSession = Depends(get_session),
+) -> SincronizarLmsUseCase:
+    return SincronizarLmsUseCase(TrazabilidadPostgresAdapter(session))
 
 
 def get_consultar_preferencias_uc(
