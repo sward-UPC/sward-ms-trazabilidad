@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LmsInteraccionItem(BaseModel):
@@ -24,3 +24,24 @@ class LmsInteraccionItem(BaseModel):
 
 class LmsSyncRequest(BaseModel):
     interacciones: list[LmsInteraccionItem]
+
+
+class LmsSyncResponse(BaseModel):
+    """Resultado de la sincronización LMS (idempotente)."""
+
+    procesadas: int = Field(description="Interacciones nuevas persistidas", ge=0)
+    omitidas: int = Field(
+        description="Interacciones omitidas por deduplicación (ya existían)", ge=0
+    )
+
+
+class TrainingRowResponse(BaseModel):
+    """Fila del dataset de entrenamiento SAKT (knowledge tracing)."""
+
+    estudiante_id: str = Field(description="UUID del estudiante")
+    concepto: str = Field(description="Concepto/sección de Moodle (skill)")
+    correcta: bool = Field(description="True si la interacción fue correcta")
+    orden: str = Field(description="Marca temporal ISO para ordenar la secuencia")
+    tipo_recurso: str = Field(
+        description="Tipo de recurso (habilita el SAKT format-aware)"
+    )

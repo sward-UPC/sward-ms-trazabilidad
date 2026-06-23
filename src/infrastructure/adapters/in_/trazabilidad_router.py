@@ -61,19 +61,26 @@ from src.application.use_cases.sincronizar_lms import (
 )
 from src.infrastructure.adapters.in_.mappers import _serializar_preferencias
 from src.infrastructure.adapters.in_.schemas import (
+    ActividadDiariaResponse,
+    ConceptoMasteryResponse,
     EstudianteProgressResponse,
+    EvolucionEtapaResponse,
     FeedbackRequest,
     FeedbackResponse,
     IndicadorResponse,
     InteraccionRequest,
     InteraccionResponse,
     LmsSyncRequest,
+    LmsSyncResponse,
     MaterialCompletadoRequest,
     MaterialCompletadoResponse,
+    MetricasPlataformaResponse,
     ProgresoResponse,
     QuizResultRequest,
     QuizResultResponse,
+    RachaResponse,
     TendenciaResponse,
+    TrainingRowResponse,
 )
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
@@ -373,7 +380,11 @@ async def get_interactions(
     return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
-@router.get("/students/{student_id}/streak", status_code=status.HTTP_200_OK)
+@router.get(
+    "/students/{student_id}/streak",
+    status_code=status.HTTP_200_OK,
+    response_model=RachaResponse,
+)
 async def get_streak(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     uc: ConsultarRachaUseCase = Depends(get_consultar_racha_uc),
@@ -389,7 +400,11 @@ async def get_streak(
     return {"dias_racha": dias}
 
 
-@router.get("/students/{student_id}/concept-mastery", status_code=status.HTTP_200_OK)
+@router.get(
+    "/students/{student_id}/concept-mastery",
+    status_code=status.HTTP_200_OK,
+    response_model=list[ConceptoMasteryResponse],
+)
 async def get_concept_mastery(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
@@ -413,7 +428,11 @@ async def get_concept_mastery(
     ]
 
 
-@router.get("/dashboard/platform-activity", status_code=status.HTTP_200_OK)
+@router.get(
+    "/dashboard/platform-activity",
+    status_code=status.HTTP_200_OK,
+    response_model=list[ActividadDiariaResponse],
+)
 async def platform_activity(
     days: int = Query(7, ge=1, le=30, description="Días hacia atrás a incluir"),
     courseId: UUID | None = Query(None, description="Filtra por curso (opcional)"),
@@ -430,7 +449,11 @@ async def platform_activity(
     return [{"day": p.day, "sesiones": p.sesiones} for p in puntos]
 
 
-@router.get("/students/{student_id}/weekly-progress", status_code=status.HTTP_200_OK)
+@router.get(
+    "/students/{student_id}/weekly-progress",
+    status_code=status.HTTP_200_OK,
+    response_model=list[EvolucionEtapaResponse],
+)
 async def get_weekly_progress(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
@@ -483,7 +506,9 @@ async def get_preferences_internal(
     return _serializar_preferencias(await uc.execute(student_id, courseId))
 
 
-@internal_router.post("/internal/lms-sync", status_code=202)
+@internal_router.post(
+    "/internal/lms-sync", status_code=202, response_model=LmsSyncResponse
+)
 async def lms_sync(
     body: LmsSyncRequest,
     uc: SincronizarLmsUseCase = Depends(get_sincronizar_lms_uc),
@@ -538,7 +563,11 @@ async def get_interactions_internal(
     return await _get_interactions_handler(student_id, courseId, limit, repo)
 
 
-@internal_router.get("/internal/metrics/platform", status_code=status.HTTP_200_OK)
+@internal_router.get(
+    "/internal/metrics/platform",
+    status_code=status.HTTP_200_OK,
+    response_model=MetricasPlataformaResponse,
+)
 async def get_platform_metrics(
     uc: ConsultarMetricasPlataformaUseCase = Depends(
         get_consultar_metricas_plataforma_uc
@@ -556,10 +585,14 @@ async def get_platform_metrics(
     }
 
 
-@internal_router.get("/dashboard/training-data", status_code=status.HTTP_200_OK)
+@internal_router.get(
+    "/dashboard/training-data",
+    status_code=status.HTTP_200_OK,
+    response_model=list[TrainingRowResponse],
+)
 async def get_training_data(
     uc: ExportarTrainingDataUseCase = Depends(get_exportar_training_data_uc),
-) -> list[dict]:
+):
     """Dataset de entrenamiento para el modelo SAKT (knowledge tracing, s2s).
 
     Devuelve TODAS las interacciones calificadas (``es_vista = False``) con

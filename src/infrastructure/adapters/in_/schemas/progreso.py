@@ -138,3 +138,25 @@ class TendenciaResponse(BaseModel):
     riesgoAlto: int = Field(  # noqa: N815 (contrato camelCase con el frontend)
         description="Estudiantes en riesgo alto/crítico esa semana", example=3
     )
+
+
+class RachaResponse(BaseModel):
+    """Racha global de días consecutivos con actividad."""
+
+    dias_racha: int = Field(description="Días consecutivos de actividad", example=5)
+
+
+class ConceptoMasteryResponse(BaseModel):
+    """Dominio real por concepto/sección del curso."""
+
+    concepto: str = Field(description="Concepto/sección de Moodle")
+    dominio: float = Field(description="Tasa de acierto (0-1 o 0-100 según el motor)")
+    total: int = Field(description="Interacciones del concepto", ge=0)
+    correctas: int = Field(description="Interacciones correctas", ge=0)
+
+
+class EvolucionEtapaResponse(BaseModel):
+    """Punto de la evolución del dominio a lo largo de la secuencia (etapas)."""
+
+    etapa: str = Field(description="Etapa de la secuencia", example="Sem 3")
+    dominio: float = Field(description="Dominio acumulado en esa etapa")

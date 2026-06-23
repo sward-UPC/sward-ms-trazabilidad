@@ -14,11 +14,20 @@ from .interacciones import (
     QuizResultRequest,
     QuizResultResponse,
 )
-from .lms import LmsInteraccionItem, LmsSyncRequest
+from .lms import (
+    LmsInteraccionItem,
+    LmsSyncRequest,
+    LmsSyncResponse,
+    TrainingRowResponse,
+)
+from .plataforma import ActividadDiariaResponse, MetricasPlataformaResponse
 from .progreso import (
+    ConceptoMasteryResponse,
     EstudianteProgressResponse,
+    EvolucionEtapaResponse,
     IndicadorResponse,
     ProgresoResponse,
+    RachaResponse,
     TendenciaResponse,
 )
 
@@ -33,8 +42,15 @@ __all__ = [
     "IndicadorResponse",
     "EstudianteProgressResponse",
     "TendenciaResponse",
+    "RachaResponse",
+    "ConceptoMasteryResponse",
+    "EvolucionEtapaResponse",
+    "ActividadDiariaResponse",
+    "MetricasPlataformaResponse",
     "LmsInteraccionItem",
     "LmsSyncRequest",
+    "LmsSyncResponse",
+    "TrainingRowResponse",
     "FeedbackRequest",
     "FeedbackResponse",
 ]
