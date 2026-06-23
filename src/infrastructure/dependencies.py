@@ -173,54 +173,6 @@ def get_sincronizar_lms_uc(
     return SincronizarLmsUseCase(TrazabilidadPostgresAdapter(session))
 
 
-def get_consultar_preferencias_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarPreferenciasUseCase:
-    return ConsultarPreferenciasUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_consultar_concepto_mastery_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarConceptoMasteryUseCase:
-    return ConsultarConceptoMasteryUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_consultar_actividad_plataforma_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarActividadPlataformaUseCase:
-    return ConsultarActividadPlataformaUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_consultar_evolucion_estudiante_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarEvolucionEstudianteUseCase:
-    return ConsultarEvolucionEstudianteUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_consultar_tendencia_etapas_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarTendenciaEtapasUseCase:
-    return ConsultarTendenciaEtapasUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_consultar_metricas_plataforma_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarMetricasPlataformaUseCase:
-    return ConsultarMetricasPlataformaUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_exportar_training_data_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ExportarTrainingDataUseCase:
-    return ExportarTrainingDataUseCase(TrazabilidadPostgresAdapter(session))
-
-
-def get_sincronizar_lms_uc(
-    session: AsyncSession = Depends(get_session),
-) -> SincronizarLmsUseCase:
-    return SincronizarLmsUseCase(TrazabilidadPostgresAdapter(session))
-
-
 def get_trazabilidad_repo(
     session: AsyncSession = Depends(get_session),
 ) -> TrazabilidadPostgresAdapter:
