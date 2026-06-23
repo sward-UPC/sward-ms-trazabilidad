@@ -4,8 +4,8 @@ from uuid import UUID
 from src.domain.entities.interaccion_academica import InteraccionAcademica
 from src.domain.entities.progreso_academico import ProgresoAcademico
 from src.domain.events.interaccion_registrada_event import InteraccionRegistradaEvent
-from src.domain.ports.out_.event_publisher_port import EventPublisherPort
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.event_publisher_port import EventPublisherPort
+from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from src.domain.entities.feedback_docente import FeedbackDocente
 from src.domain.events.feedback_registrado_event import FeedbackRegistradoEvent
-from src.domain.ports.out_.event_publisher_port import EventPublisherPort
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.event_publisher_port import EventPublisherPort
+from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 

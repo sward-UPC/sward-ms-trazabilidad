@@ -29,10 +29,10 @@ from src.domain.entities.progreso_academico import (
     ProgresoAcademico,
     ProgresoHistorial,
 )
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
-from src.domain.ports.out_.usuarios_client_port import UsuariosClientPort
+from src.application.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.infrastructure.adapters.in_.main import app
 from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.dependencies import (

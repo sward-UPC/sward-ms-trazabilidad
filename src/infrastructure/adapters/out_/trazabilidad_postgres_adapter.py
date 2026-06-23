@@ -9,7 +9,7 @@ from src.domain.entities.progreso_academico import (
     ProgresoAcademico,
     ProgresoHistorial,
 )
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.trazabilidad_repository_port import (
     ActividadDiaria,
     AgregadoEstudiante,
     ConceptoMastery,
