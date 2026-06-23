@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -6,47 +5,18 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from scalar_fastapi import get_scalar_api_reference
-from sqlalchemy import text
 
 from src.infrastructure.adapters.in_.trazabilidad_router import internal_router, router
 from src.infrastructure.config.settings import settings
 from src.infrastructure.db.database import engine
-from src.infrastructure.db.models.trazabilidad_models import Base
 
 logger = logging.getLogger(__name__)
-
-# Columnas nuevas en tablas existentes (create_all no las agrega). Idempotente.
-_MIGRACIONES = [
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS concept_id VARCHAR(255)",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_correct BOOLEAN",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS nota DOUBLE PRECISION",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS url_modulo VARCHAR(500) NOT NULL DEFAULT ''",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS nombre_actividad VARCHAR(500) NOT NULL DEFAULT ''",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS tipo_recurso VARCHAR(50) NOT NULL DEFAULT ''",
-    "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS es_vista BOOLEAN NOT NULL DEFAULT FALSE",
-    "ALTER TABLE academic_progress ADD COLUMN IF NOT EXISTS nombre VARCHAR(255) NOT NULL DEFAULT ''",
-    "ALTER TABLE academic_progress ADD COLUMN IF NOT EXISTS correo VARCHAR(255) NOT NULL DEFAULT ''",
-]
-
-
-async def _init_db() -> None:
-    for intento in range(10):
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                for stmt in _MIGRACIONES:
-                    await conn.execute(text(stmt))
-            logger.info("Base de datos lista.")
-            return
-        except Exception as exc:
-            logger.warning("BD no disponible (intento %d/10): %s", intento + 1, exc)
-            await asyncio.sleep(5)
-    logger.error("No se pudo conectar a la BD tras 10 intentos.")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    asyncio.create_task(_init_db())
+    # El esquema lo gestiona Alembic (`alembic upgrade head` en el entrypoint del
+    # contenedor); aquí solo liberamos el engine al apagar.
     yield
     await engine.dispose()
 
