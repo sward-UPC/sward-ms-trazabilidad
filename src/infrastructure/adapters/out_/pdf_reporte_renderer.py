@@ -20,7 +20,7 @@ from reportlab.platypus import (
 )
 
 from src.application.use_cases.generar_reporte_docente import ReporteClase
-from src.domain.ports.out_.reporte_renderer_port import ReporteRendererPort
+from src.application.ports.out_.reporte_renderer_port import ReporteRendererPort
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo
 
 # Paleta SWARD.
