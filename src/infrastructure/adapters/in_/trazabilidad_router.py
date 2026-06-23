@@ -1,24 +1,41 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy.ext.asyncio import AsyncSession
-from sward_shared.identidad import moodle_uuid as _moodle_id
 
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
     CalcularIndicadoresUseCase,
 )
+from src.application.use_cases.consultar_actividad_plataforma import (
+    ConsultarActividadPlataformaUseCase,
+)
+from src.application.use_cases.consultar_concepto_mastery import (
+    ConsultarConceptoMasteryUseCase,
+)
 from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
+)
+from src.application.use_cases.consultar_evolucion_estudiante import (
+    ConsultarEvolucionEstudianteUseCase,
+)
+from src.application.use_cases.consultar_metricas_plataforma import (
+    ConsultarMetricasPlataformaUseCase,
+)
+from src.application.use_cases.consultar_preferencias import (
+    ConsultarPreferenciasUseCase,
 )
 from src.application.use_cases.consultar_progreso import (
     ConsultarProgresoCommand,
     ConsultarProgresoUseCase,
 )
+from src.application.use_cases.consultar_tendencia_etapas import (
+    ConsultarTendenciaEtapasUseCase,
+)
+from src.application.use_cases.exportar_training_data import ExportarTrainingDataUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -39,27 +56,37 @@ from src.application.use_cases.registrar_material_completado import (
     RegistrarMaterialCompletadoUseCase,
 )
 from src.application.use_cases.consultar_racha import ConsultarRachaUseCase
+from src.application.use_cases.sincronizar_lms import (
+    LmsInteraccionDTO,
+    SincronizarLmsCommand,
+    SincronizarLmsUseCase,
+)
 from src.domain.value_objects.nivel_riesgo import TipoInteraccion
 from src.infrastructure.adapters.out_.trazabilidad_postgres_adapter import (
     TrazabilidadPostgresAdapter,
 )
-from src.infrastructure.db.database import get_session
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
+    get_consultar_actividad_plataforma_uc,
+    get_consultar_concepto_mastery_uc,
+    get_consultar_evolucion_estudiante_uc,
+    get_consultar_metricas_plataforma_uc,
+    get_consultar_preferencias_uc,
     get_consultar_progreso_uc,
+    get_consultar_tendencia_etapas_uc,
     get_dashboard_docente_uc,
+    get_exportar_training_data_uc,
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     get_registrar_quiz_result_uc,
     get_registrar_material_completado_uc,
     get_consultar_racha_uc,
+    get_sincronizar_lms_uc,
     get_trazabilidad_repo,
     require_jwt,
     require_service_key,
 )
-
-# La derivación Moodle→UUID vive en sward_shared.identidad (_moodle_id, importado arriba).
 
 
 # Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
@@ -657,7 +684,7 @@ async def get_streak(
 async def get_concept_mastery(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarConceptoMasteryUseCase = Depends(get_consultar_concepto_mastery_uc),
 ):
     """Dominio real por concepto/sección del curso para un estudiante.
 
@@ -665,108 +692,42 @@ async def get_concept_mastery(
     tasa de acierto. Alimenta el radar, las barras y las recomendaciones del
     detalle del estudiante. Orden: peores primero.
     """
-    from sqlalchemy import func as sa_func
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    rows = (
-        await session.execute(
-            sa_select(
-                InteraccionModel.concept_id,
-                sa_func.count(InteraccionModel.id),
-                sa_func.count(InteraccionModel.id).filter(
-                    InteraccionModel.is_correct.is_(True)
-                ),
-                sa_func.avg(InteraccionModel.nota),
-            )
-            .where(
-                InteraccionModel.estudiante_id == student_id,
-                InteraccionModel.curso_id == courseId,
-                InteraccionModel.concept_id.isnot(None),
-            )
-            .group_by(InteraccionModel.concept_id)
-        )
-    ).all()
-    out = []
-    for concepto, total, correctas, prom_nota in rows:
-        total = int(total or 0)
-        correctas = int(correctas or 0)
-        if total == 0:
-            continue
-        # Dominio continuo = promedio de la nota; fallback a % aciertos si no hay.
-        dominio = (
-            round(float(prom_nota), 1)
-            if prom_nota is not None
-            else round(correctas / total * 100, 1)
-        )
-        out.append(
-            {
-                "concepto": concepto,
-                "dominio": dominio,
-                "total": total,
-                "correctas": correctas,
-            }
-        )
-    out.sort(key=lambda x: x["dominio"])
-    return out
+    conceptos = await uc.execute(student_id, courseId)
+    return [
+        {
+            "concepto": c.concepto,
+            "dominio": c.dominio,
+            "total": c.total,
+            "correctas": c.correctas,
+        }
+        for c in conceptos
+    ]
 
 
 @router.get("/dashboard/platform-activity", status_code=status.HTTP_200_OK)
 async def platform_activity(
     days: int = Query(7, ge=1, le=30, description="Días hacia atrás a incluir"),
     courseId: UUID | None = Query(None, description="Filtra por curso (opcional)"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarActividadPlataformaUseCase = Depends(
+        get_consultar_actividad_plataforma_uc
+    ),
 ):
     """Actividad real de la plataforma: # de interacciones por día (últimos N días).
 
     Alimenta el gráfico de actividad del panel de administración con datos
     reales. Los días sin actividad se devuelven en cero (serie continua).
     """
-    from datetime import datetime, timedelta, timezone
-
-    from sqlalchemy import func as sa_func
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    hoy = datetime.now(timezone.utc).date()
-    desde = hoy - timedelta(days=days - 1)
-
-    condiciones = [sa_func.date(InteraccionModel.fecha) >= desde]
-    if courseId is not None:
-        condiciones.append(InteraccionModel.curso_id == courseId)
-
-    rows = (
-        await session.execute(
-            sa_select(
-                sa_func.date(InteraccionModel.fecha).label("dia"),
-                sa_func.count(InteraccionModel.id),
-            )
-            .where(*condiciones)
-            .group_by(sa_func.date(InteraccionModel.fecha))
-        )
-    ).all()
-    counts = {str(dia): int(total or 0) for dia, total in rows}
-
-    dias_es = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-    out = []
-    for i in range(days):
-        d = desde + timedelta(days=i)
-        out.append(
-            {
-                "day": f"{dias_es[d.weekday()]} {d.day:02d}",
-                "sesiones": counts.get(str(d), 0),
-            }
-        )
-    return out
+    puntos = await uc.execute(days, courseId)
+    return [{"day": p.day, "sesiones": p.sesiones} for p in puntos]
 
 
 @router.get("/students/{student_id}/weekly-progress", status_code=status.HTTP_200_OK)
 async def get_weekly_progress(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarEvolucionEstudianteUseCase = Depends(
+        get_consultar_evolucion_estudiante_uc
+    ),
 ):
     """Evolución del dominio: dominio acumulado (running % de aciertos) a lo
     largo de la secuencia de actividades, en hasta 6 etapas.
@@ -774,139 +735,18 @@ async def get_weekly_progress(
     Se usa la secuencia (no semanas calendario) porque las notas de Moodle no
     traen fecha de envío fiable; así la curva refleja la evolución real.
     """
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    rows = (
-        await session.execute(
-            sa_select(InteraccionModel.is_correct, InteraccionModel.nota)
-            .where(
-                InteraccionModel.estudiante_id == student_id,
-                InteraccionModel.curso_id == courseId,
-            )
-            .order_by(InteraccionModel.fecha, InteraccionModel.id)
-        )
-    ).all()
-    n = len(rows)
-    if n == 0:
-        return []
-    etapas = min(6, n)
-    tam = n / etapas
-    acum_total = 0
-    acum_nota = 0.0  # suma de notas (o 0/100 si no hay nota) para el promedio acumulado
-    out = []
-    for i, (is_correct, nota) in enumerate(rows, start=1):
-        acum_total += 1
-        acum_nota += float(nota) if nota is not None else (100.0 if is_correct else 0.0)
-        if i >= round((len(out) + 1) * tam) or i == n:
-            out.append(
-                {
-                    "etapa": f"E{len(out) + 1}",
-                    "dominio": round(acum_nota / acum_total, 1),
-                }
-            )
-            if len(out) >= etapas:
-                break
-    return out
+    puntos = await uc.execute(student_id, courseId)
+    return [{"etapa": p.etapa, "dominio": p.dominio} for p in puntos]
 
 
-async def _calcular_preferencias(
-    session: AsyncSession, student_id: UUID, course_id: UUID
-) -> dict:
-    """Preferencias de formato del estudiante, separadas en dos dimensiones.
-
-    **RENDIMIENTO** (filas calificadas, ``es_vista = False``): en qué tipo de
-    recurso de Moodle (quiz, assign, page, url, resource, book…) rinde mejor.
-    Agrupa por ``tipo_recurso`` (ignora las vacías) y calcula el promedio de
-    nota por tipo. La nota usada por fila es ``nota``; si es ``None`` cae a 100
-    (acierto) o 0 (error). ``tipo_fuerte``/``tipo_debil`` solo consideran tipos
-    con señal mínima (total>=2); si ninguno la alcanza, usa el de mayor total.
-
-    **ENGAGEMENT** (filas de vista, ``es_vista = True``): qué formatos consume
-    más (``engagement_por_tipo``, ``formato_mas_consumido``) y qué recursos ya
-    vio (``recursos_vistos``), para que el consumidor no re-recomiende lo visto.
-
-    Reusado por la ruta JWT (frontend) y la interna (s2s con ms-recomendacion).
-    """
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    rows = (
-        await session.execute(
-            sa_select(
-                InteraccionModel.tipo_recurso,
-                InteraccionModel.nota,
-                InteraccionModel.is_correct,
-                InteraccionModel.es_vista,
-                InteraccionModel.url_modulo,
-            ).where(
-                InteraccionModel.estudiante_id == student_id,
-                InteraccionModel.curso_id == course_id,
-            )
-        )
-    ).all()
-
-    # RENDIMIENTO (calificadas): tipo -> [suma de notas, total]
-    agregados: dict[str, list[float]] = {}
-    # ENGAGEMENT (vistas): tipo -> count de vistas
-    vistas_por_tipo: dict[str, int] = {}
-    # Recursos ya vistos (url_modulo distintos, no vacíos).
-    recursos_vistos: list[str] = []
-    vistos_set: set[str] = set()
-    for tipo_recurso, nota, is_correct, es_vista, url_modulo in rows:
-        if es_vista:
-            if tipo_recurso:
-                vistas_por_tipo[tipo_recurso] = vistas_por_tipo.get(tipo_recurso, 0) + 1
-            if url_modulo and url_modulo not in vistos_set:
-                vistos_set.add(url_modulo)
-                recursos_vistos.append(url_modulo)
-            continue
-        if not tipo_recurso:
-            continue
-        valor = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
-        acc = agregados.setdefault(tipo_recurso, [0.0, 0.0])
-        acc[0] += valor
-        acc[1] += 1
-
-    por_tipo = [
-        {
-            "tipo": tipo,
-            "promedio": round(suma / total, 1),
-            "total": int(total),
-        }
-        for tipo, (suma, total) in agregados.items()
-    ]
-    por_tipo.sort(key=lambda x: x["promedio"], reverse=True)
-
-    # tipo_fuerte/debil: prioriza tipos con señal mínima (total>=2); si ninguno
-    # llega, usa el de mayor total disponible.
-    candidatos = [p for p in por_tipo if p["total"] >= 2]
-    if not candidatos and por_tipo:
-        candidatos = [max(por_tipo, key=lambda x: x["total"])]
-    tipo_fuerte = (
-        max(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
-    )
-    tipo_debil = (
-        min(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
-    )
-
-    engagement_por_tipo = [
-        {"tipo": tipo, "vistas": vistas} for tipo, vistas in vistas_por_tipo.items()
-    ]
-    engagement_por_tipo.sort(key=lambda x: x["vistas"], reverse=True)
-    formato_mas_consumido = (
-        engagement_por_tipo[0]["tipo"] if engagement_por_tipo else ""
-    )
-
+def _serializar_preferencias(pref) -> dict:
     return {
-        "por_tipo": por_tipo,
-        "tipo_fuerte": tipo_fuerte,
-        "tipo_debil": tipo_debil,
-        "engagement_por_tipo": engagement_por_tipo,
-        "formato_mas_consumido": formato_mas_consumido,
-        "recursos_vistos": recursos_vistos,
+        "por_tipo": pref.por_tipo,
+        "tipo_fuerte": pref.tipo_fuerte,
+        "tipo_debil": pref.tipo_debil,
+        "engagement_por_tipo": pref.engagement_por_tipo,
+        "formato_mas_consumido": pref.formato_mas_consumido,
+        "recursos_vistos": pref.recursos_vistos,
     }
 
 
@@ -914,13 +754,13 @@ async def _calcular_preferencias(
 async def get_preferences(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarPreferenciasUseCase = Depends(get_consultar_preferencias_uc),
 ):
     """Preferencia de formato del estudiante (en qué tipo de recurso rinde mejor).
 
     **Auth:** JWT
     """
-    return await _calcular_preferencias(session, student_id, courseId)
+    return _serializar_preferencias(await uc.execute(student_id, courseId))
 
 
 # ---------------------------------------------------------------------------
@@ -959,7 +799,7 @@ internal_router = APIRouter(
 async def get_preferences_internal(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarPreferenciasUseCase = Depends(get_consultar_preferencias_uc),
 ):
     """Gemelo interno de ``/students/{id}/preferences`` para consumo s2s.
 
@@ -968,13 +808,13 @@ async def get_preferences_internal(
 
     **Auth:** X-Service-Key
     """
-    return await _calcular_preferencias(session, student_id, courseId)
+    return _serializar_preferencias(await uc.execute(student_id, courseId))
 
 
 @internal_router.post("/internal/lms-sync", status_code=202)
 async def lms_sync(
     body: LmsSyncRequest,
-    session: AsyncSession = Depends(get_session),
+    uc: SincronizarLmsUseCase = Depends(get_sincronizar_lms_uc),
 ):
     """Recibe interacciones desde ms-integracion-lms y las persiste.
 
@@ -983,146 +823,30 @@ async def lms_sync(
 
     **Auth:** X-Service-Key | **Idempotente:** sí (omite eventos ya procesados)
     """
-    from sqlalchemy import func as sa_func
-    from sqlalchemy import select as sa_select
-
-    from src.domain.value_objects.nivel_riesgo import NivelRiesgo, TipoInteraccion
-    from src.infrastructure.db.models.trazabilidad_models import (
-        InteraccionModel,
-        ProgresoModel,
+    resultado = await uc.execute(
+        SincronizarLmsCommand(
+            interacciones=[
+                LmsInteraccionDTO(
+                    moodle_user_id=item.moodle_user_id,
+                    moodle_course_id=item.moodle_course_id,
+                    moodle_activity_id=item.moodle_activity_id,
+                    fecha_evento=item.fecha_evento,
+                    nombre=item.nombre,
+                    correo=item.correo,
+                    concepto=item.concepto,
+                    es_correcta=item.es_correcta,
+                    nota=item.nota,
+                    url_modulo=item.url_modulo,
+                    nombre_actividad=item.nombre_actividad,
+                    tipo_recurso=item.tipo_recurso,
+                    es_vista=item.es_vista,
+                    moodle_event_id=item.moodle_event_id,
+                )
+                for item in body.interacciones
+            ]
+        )
     )
-
-    procesadas = 0
-    omitidas = 0
-    # (estudiante_id, curso_id) afectados -> para recomputar su progreso.
-    afectados: set[tuple] = set()
-    # estudiante_id -> (nombre, correo) más reciente visto en este lote.
-    perfiles: dict = {}
-    for item in body.interacciones:
-        est_id = _moodle_id("user", item.moodle_user_id)
-        cur_id = _moodle_id("course", item.moodle_course_id)
-        afectados.add((est_id, cur_id))
-        if item.nombre or item.correo:
-            perfiles[est_id] = (item.nombre, item.correo)
-
-        if item.moodle_event_id:
-            existente = (
-                await session.execute(
-                    sa_select(InteraccionModel)
-                    .where(InteraccionModel.moodle_event_id == item.moodle_event_id)
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-            if existente is not None:
-                # Idempotente pero auto-corrige: actualiza corrección/nota/concepto
-                # por si la nota en Moodle cambió o el registro venía incompleto.
-                existente.is_correct = item.es_correcta
-                existente.nota = item.nota
-                existente.concept_id = item.concepto or None
-                if item.url_modulo:
-                    existente.url_modulo = item.url_modulo
-                if item.nombre_actividad:
-                    existente.nombre_actividad = item.nombre_actividad
-                if item.tipo_recurso:
-                    existente.tipo_recurso = item.tipo_recurso
-                existente.es_vista = item.es_vista
-                omitidas += 1
-                continue
-
-        tipo = TipoInteraccion.COMPLETADO if item.es_correcta else TipoInteraccion.VISTA
-        fecha = (
-            item.fecha_evento
-            if item.fecha_evento.tzinfo
-            else item.fecha_evento.replace(tzinfo=timezone.utc)
-        )
-        m = InteraccionModel(
-            estudiante_id=est_id,
-            curso_id=cur_id,
-            actividad_id=_moodle_id("activity", item.moodle_activity_id),
-            concept_id=item.concepto or None,
-            is_correct=item.es_correcta,
-            nota=item.nota,
-            url_modulo=item.url_modulo,
-            nombre_actividad=item.nombre_actividad,
-            tipo_recurso=item.tipo_recurso,
-            es_vista=item.es_vista,
-            tipo=tipo.value,
-            fecha=fecha,
-            moodle_event_id=item.moodle_event_id,
-        )
-        session.add(m)
-        procesadas += 1
-
-    # Persiste las interacciones para poder agregarlas (mismo commit).
-    await session.flush()
-
-    # Recomputa academic_progress por estudiante/curso desde TODAS sus interacciones.
-    for est_id, cur_id in afectados:
-        fila = (
-            await session.execute(
-                sa_select(
-                    sa_func.count(InteraccionModel.id),
-                    sa_func.count(InteraccionModel.id).filter(
-                        InteraccionModel.is_correct.is_(True)
-                    ),
-                    sa_func.avg(InteraccionModel.nota),
-                    sa_func.max(InteraccionModel.fecha),
-                ).where(
-                    InteraccionModel.estudiante_id == est_id,
-                    InteraccionModel.curso_id == cur_id,
-                )
-            )
-        ).one()
-        total, correctas, prom_nota, ultima = (
-            int(fila[0] or 0),
-            int(fila[1] or 0),
-            fila[2],
-            fila[3],
-        )
-        if total == 0:
-            continue
-        # Dominio = promedio de la nota real (continuo). Si no hay notas, cae al
-        # % de aciertos para no romper datos antiguos.
-        puntaje = (
-            round(float(prom_nota), 1)
-            if prom_nota is not None
-            else round(correctas / total * 100, 1)
-        )
-        if puntaje < 40:
-            riesgo = NivelRiesgo.CRITICO
-        elif puntaje < 55:
-            riesgo = NivelRiesgo.ALTO
-        elif puntaje < 70:
-            riesgo = NivelRiesgo.MEDIO
-        else:
-            riesgo = NivelRiesgo.BAJO
-        nombre, correo = perfiles.get(est_id, ("", ""))
-
-        prog = (
-            await session.execute(
-                sa_select(ProgresoModel).where(
-                    ProgresoModel.estudiante_id == est_id,
-                    ProgresoModel.curso_id == cur_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if prog is None:
-            prog = ProgresoModel(estudiante_id=est_id, curso_id=cur_id)
-            session.add(prog)
-        prog.total_interacciones = total
-        prog.recursos_completados = correctas
-        prog.puntaje_promedio = puntaje
-        prog.porcentaje_avance = puntaje
-        prog.nivel_riesgo = riesgo.value
-        if ultima is not None:
-            prog.ultima_actividad = ultima
-        if nombre:
-            prog.nombre = nombre
-        if correo:
-            prog.correo = correo
-
-    await session.commit()
-    return {"procesadas": procesadas, "omitidas": omitidas}
+    return {"procesadas": resultado.procesadas, "omitidas": resultado.omitidas}
 
 
 @internal_router.get(
@@ -1144,33 +868,25 @@ async def get_interactions_internal(
 
 @internal_router.get("/internal/metrics/platform", status_code=status.HTTP_200_OK)
 async def get_platform_metrics(
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarMetricasPlataformaUseCase = Depends(
+        get_consultar_metricas_plataforma_uc
+    ),
 ):
     """Métricas agregadas de toda la plataforma (s2s, auth service-key).
 
     Usado por ms-usuarios para el KPI "Dominio Plataforma" del panel admin.
     Promedia ``puntaje_promedio`` sobre todos los progresos académicos.
     """
-    from sqlalchemy import func as sa_func
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import ProgresoModel
-
-    avg = (
-        await session.execute(sa_select(sa_func.avg(ProgresoModel.puntaje_promedio)))
-    ).scalar()
-    total = (
-        await session.execute(sa_select(sa_func.count()).select_from(ProgresoModel))
-    ).scalar_one()
+    m = await uc.execute()
     return {
-        "dominio_promedio": round(float(avg), 1) if avg is not None else None,
-        "estudiantes_con_progreso": int(total),
+        "dominio_promedio": m.dominio_promedio,
+        "estudiantes_con_progreso": m.estudiantes_con_progreso,
     }
 
 
 @internal_router.get("/dashboard/training-data", status_code=status.HTTP_200_OK)
 async def get_training_data(
-    session: AsyncSession = Depends(get_session),
+    uc: ExportarTrainingDataUseCase = Depends(get_exportar_training_data_uc),
 ) -> list[dict]:
     """Dataset de entrenamiento para el modelo SAKT (knowledge tracing, s2s).
 
@@ -1181,38 +897,18 @@ async def get_training_data(
 
     **Auth:** X-Service-Key
     """
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    rows = (
-        await session.execute(
-            sa_select(
-                InteraccionModel.estudiante_id,
-                InteraccionModel.concept_id,
-                InteraccionModel.is_correct,
-                InteraccionModel.fecha,
-                InteraccionModel.tipo_recurso,
-            )
-            .where(
-                InteraccionModel.concept_id.isnot(None),
-                InteraccionModel.concept_id != "",
-                InteraccionModel.es_vista.is_(False),
-            )
-            .order_by(InteraccionModel.estudiante_id, InteraccionModel.fecha)
-        )
-    ).all()
     # `tipo_recurso` habilita el SAKT format-aware (skill concepto×formato) y el
     # análisis pedagógico por formato; los pipelines viejos ignoran el campo extra.
+    muestras = await uc.execute()
     return [
         {
-            "estudiante_id": str(estudiante_id),
-            "concepto": concepto,
-            "correcta": bool(correcta),
-            "orden": fecha.isoformat(),
-            "tipo_recurso": tipo_recurso or "",
+            "estudiante_id": s.estudiante_id,
+            "concepto": s.concepto,
+            "correcta": s.correcta,
+            "orden": s.orden,
+            "tipo_recurso": s.tipo_recurso,
         }
-        for estudiante_id, concepto, correcta, fecha, tipo_recurso in rows
+        for s in muestras
     ]
 
 
@@ -1297,7 +993,7 @@ class TendenciaResponse(BaseModel):
 )
 async def tendencia_docente(
     course_id: UUID = Path(..., description="UUID del curso"),
-    session: AsyncSession = Depends(get_session),
+    uc: ConsultarTendenciaEtapasUseCase = Depends(get_consultar_tendencia_etapas_uc),
 ) -> list[dict]:
     """Tendencia del curso: dominio promedio acumulado y nº de estudiantes en
     riesgo, a lo largo de la secuencia de actividades (hasta 6 etapas).
@@ -1307,53 +1003,11 @@ async def tendencia_docente(
     historial de snapshots solo crece con el tiempo. Así la curva refleja datos
     reales desde la primera sincronización. **Auth:** JWT
     """
-    from collections import defaultdict
-
-    from sqlalchemy import select as sa_select
-
-    from src.infrastructure.db.models.trazabilidad_models import InteraccionModel
-
-    rows = (
-        await session.execute(
-            sa_select(
-                InteraccionModel.estudiante_id,
-                InteraccionModel.is_correct,
-                InteraccionModel.nota,
-            )
-            .where(InteraccionModel.curso_id == course_id)
-            .order_by(InteraccionModel.fecha, InteraccionModel.id)
-        )
-    ).all()
-    n = len(rows)
-    if n == 0:
-        return []
-
-    etapas = min(6, n)
-    tam = n / etapas
-    suma_est: dict = defaultdict(float)  # suma de notas por estudiante
-    cnt_est: dict = defaultdict(int)
-    total_nota = 0.0
-    total_cnt = 0
-    out: list[dict] = []
-    for i, (est_id, is_correct, nota) in enumerate(rows, start=1):
-        val = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
-        suma_est[est_id] += val
-        cnt_est[est_id] += 1
-        total_nota += val
-        total_cnt += 1
-        if i >= round((len(out) + 1) * tam) or i == n:
-            # Estudiantes en riesgo alto = dominio acumulado < 50.
-            en_riesgo = sum(1 for e in cnt_est if suma_est[e] / cnt_est[e] < 50)
-            out.append(
-                {
-                    "week": f"Sem {len(out) + 1}",
-                    "promedio": round(total_nota / total_cnt, 1),
-                    "riesgoAlto": en_riesgo,
-                }
-            )
-            if len(out) >= etapas:
-                break
-    return out
+    puntos = await uc.execute(course_id)
+    return [
+        {"week": p.week, "promedio": p.promedio, "riesgoAlto": p.riesgo_alto}
+        for p in puntos
+    ]
 
 
 @router.get(
