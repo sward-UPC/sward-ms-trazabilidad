@@ -20,3 +20,14 @@ def test_riesgo_bajo_puntaje_alto():
     )
     p._recalcular_riesgo()
     assert p.nivel_riesgo == NivelRiesgo.BAJO
+
+
+def test_por_puntaje_es_la_regla_unica_de_umbrales():
+    # Fuente de verdad del dominio: usada por el progreso y por la sync del LMS.
+    assert NivelRiesgo.por_puntaje(0.0, 0) == NivelRiesgo.CRITICO
+    assert NivelRiesgo.por_puntaje(39.9) == NivelRiesgo.CRITICO
+    assert NivelRiesgo.por_puntaje(40.0) == NivelRiesgo.ALTO
+    assert NivelRiesgo.por_puntaje(59.9) == NivelRiesgo.ALTO
+    assert NivelRiesgo.por_puntaje(60.0) == NivelRiesgo.MEDIO
+    assert NivelRiesgo.por_puntaje(74.9) == NivelRiesgo.MEDIO
+    assert NivelRiesgo.por_puntaje(75.0) == NivelRiesgo.BAJO

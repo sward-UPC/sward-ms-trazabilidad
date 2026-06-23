@@ -127,6 +127,43 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
                 counts[est] = n
         return counts
 
+    # --- Métodos analíticos / LMS (no ejercidos por los tests in-memory) -----
+    async def upsert_interaccion_lms(self, item):
+        raise NotImplementedError
+
+    async def flush_interacciones_lms(self):
+        raise NotImplementedError
+
+    async def agregar_metricas_estudiante(self, estudiante_id, curso_id):
+        raise NotImplementedError
+
+    async def recomputar_progreso_lms(self, datos):
+        raise NotImplementedError
+
+    async def commit_lms_sync(self):
+        raise NotImplementedError
+
+    async def calcular_preferencias(self, estudiante_id, curso_id):
+        raise NotImplementedError
+
+    async def concepto_mastery(self, estudiante_id, curso_id):
+        raise NotImplementedError
+
+    async def actividad_por_dia(self, desde, curso_id):
+        raise NotImplementedError
+
+    async def secuencia_estudiante(self, estudiante_id, curso_id):
+        raise NotImplementedError
+
+    async def secuencia_curso(self, curso_id):
+        raise NotImplementedError
+
+    async def metricas_plataforma(self):
+        raise NotImplementedError
+
+    async def training_data(self):
+        raise NotImplementedError
+
 
 class _FakeUsuariosClient(UsuariosClientPort):
     """Simula ms-usuarios: enriquece cualquier UUID con un perfil sintético."""
