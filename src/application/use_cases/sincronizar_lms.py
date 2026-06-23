@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sward_shared.identidad import moodle_uuid as _moodle_id
 
-from src.domain.ports.out_.trazabilidad_repository_port import (
+from src.application.ports.out_.trazabilidad_repository_port import (
     InteraccionLms,
     ProgresoRecomputado,
     TrazabilidadRepositoryPort,

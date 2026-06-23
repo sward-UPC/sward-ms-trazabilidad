@@ -6,7 +6,7 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
     EstudianteDashboard,
 )
-from src.domain.ports.out_.reporte_renderer_port import ReporteRendererPort
+from src.application.ports.out_.reporte_renderer_port import ReporteRendererPort
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo
 
 

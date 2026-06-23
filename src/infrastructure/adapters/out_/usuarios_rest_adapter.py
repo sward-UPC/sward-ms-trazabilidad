@@ -1,7 +1,7 @@
 import httpx
 from uuid import UUID
 
-from src.domain.ports.out_.usuarios_client_port import UsuariosClientPort
+from src.application.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.infrastructure.config.settings import settings
 
 
