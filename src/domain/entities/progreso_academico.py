@@ -46,11 +46,6 @@ class ProgresoAcademico:
         self._recalcular_riesgo()
 
     def _recalcular_riesgo(self) -> None:
-        if self.puntaje_promedio < 40 or self.total_interacciones == 0:
-            self.nivel_riesgo = NivelRiesgo.CRITICO
-        elif self.puntaje_promedio < 60:
-            self.nivel_riesgo = NivelRiesgo.ALTO
-        elif self.puntaje_promedio < 75:
-            self.nivel_riesgo = NivelRiesgo.MEDIO
-        else:
-            self.nivel_riesgo = NivelRiesgo.BAJO
+        self.nivel_riesgo = NivelRiesgo.por_puntaje(
+            self.puntaje_promedio, self.total_interacciones
+        )
