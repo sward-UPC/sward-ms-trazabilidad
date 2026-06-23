@@ -9,7 +9,6 @@ from src.application.use_cases.consultar_dashboard_docente import (
     ConsultarDashboardDocenteUseCase,
 )
 from src.application.use_cases.consultar_progreso import ConsultarProgresoUseCase
-from src.application.use_cases.consultar_tendencia import ConsultarTendenciaUseCase
 from src.application.use_cases.generar_reporte_docente import (
     GenerarReporteDocenteUseCase,
 )
@@ -124,12 +123,6 @@ def get_registrar_feedback_uc(
     events: EventBridgeAdapter = Depends(get_eventbridge_adapter),
 ) -> RegistrarFeedbackUseCase:
     return RegistrarFeedbackUseCase(TrazabilidadPostgresAdapter(session), events)
-
-
-def get_consultar_tendencia_uc(
-    session: AsyncSession = Depends(get_session),
-) -> ConsultarTendenciaUseCase:
-    return ConsultarTendenciaUseCase(TrazabilidadPostgresAdapter(session))
 
 
 def get_consultar_preferencias_uc(
