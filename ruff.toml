@@ -1,0 +1,10 @@
+# Fijado el 23/09/2026, como en los demas microservicios (20 y 22/09). Este
+# repositorio se habia quedado sin la fijacion: con las reglas por defecto de un
+# ruff mas nuevo, el lint reportaba 106 avisos sobre codigo que llevaba meses en
+# main —74 de ellos B008, que marca el Depends() de FastAPI en los valores por
+# defecto, que es justo como se escribe FastAPI— y el build de la imagen no
+# llegaba a construirse. Estas son las reglas que revisaba cuando estaba verde.
+line-length = 88
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
