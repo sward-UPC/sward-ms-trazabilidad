@@ -113,6 +113,24 @@ from src.infrastructure.dependencies import (
 router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 
+def de_quien(student_id: UUID, user: dict) -> UUID:
+    """El estudiante solo lee lo suyo; docente y administrador, lo de cualquiera.
+
+    Estas rutas tomaban el id de la URL sin mirar quién preguntaba: con un JWT de
+    estudiante se podían leer los datos de otro cambiando el UUID, que además es
+    determinístico a partir del id de Moodle (uuid5), así que se puede derivar.
+    Es la misma comprobación que ya hace ms-recomendacion en /recommendations,
+    pero al revés: allí se nombra al estudiante y aquí a quien sí puede mirar a
+    otros. Un token con un rol que no esté en la lista —o sin el claim— se
+    queda con lo suyo, que es el lado seguro del error. Las rutas internas
+    (servicio a servicio) no pasan por aquí: usan la service-key.
+    """
+    if user.get("rol") in ("docente", "administrador"):
+        return student_id
+    propio = user.get("sub")
+    return UUID(propio) if propio else student_id
+
+
 @router.post(
     "/interactions",
     status_code=status.HTTP_201_CREATED,
@@ -263,6 +281,7 @@ async def get_progress(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
+    user: dict = Depends(require_jwt),
 ):
     """Obtiene el progreso de un estudiante en un curso específico.
 
@@ -271,7 +290,9 @@ async def get_progress(
     **SLA:** <150ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
     p = await uc.execute(
-        ConsultarProgresoCommand(estudiante_id=student_id, curso_id=courseId)
+        ConsultarProgresoCommand(
+            estudiante_id=de_quien(student_id, user), curso_id=courseId
+        )
     )
     if not p:
         return {
@@ -318,6 +339,7 @@ async def get_indicators(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: CalcularIndicadoresUseCase = Depends(get_calcular_indicadores_uc),
+    user: dict = Depends(require_jwt),
 ):
     """Obtiene los indicadores de desempeño de un estudiante en un curso.
 
@@ -326,7 +348,9 @@ async def get_indicators(
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
     indicadores = await uc.execute(
-        CalcularIndicadoresCommand(estudiante_id=student_id, curso_id=courseId)
+        CalcularIndicadoresCommand(
+            estudiante_id=de_quien(student_id, user), curso_id=courseId
+        )
     )
     return [
         {"nombre": i.nombre, "valor": i.valor, "unidad": i.unidad} for i in indicadores
@@ -372,12 +396,15 @@ async def get_interactions(
     courseId: UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
+    user: dict = Depends(require_jwt),
 ):
     """Obtiene el historial de interacciones de un estudiante (auth JWT).
 
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
-    return await _get_interactions_handler(student_id, courseId, limit, repo)
+    return await _get_interactions_handler(
+        de_quien(student_id, user), courseId, limit, repo
+    )
 
 
 @router.get(
@@ -388,6 +415,7 @@ async def get_interactions(
 async def get_streak(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     uc: ConsultarRachaUseCase = Depends(get_consultar_racha_uc),
+    user: dict = Depends(require_jwt),
 ):
     """Racha GLOBAL de días consecutivos con actividad (en todos los cursos).
 
@@ -396,7 +424,7 @@ async def get_streak(
 
     **Auth:** JWT
     """
-    dias = await uc.execute(student_id)
+    dias = await uc.execute(de_quien(student_id, user))
     return {"dias_racha": dias}
 
 
@@ -409,6 +437,7 @@ async def get_concept_mastery(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarConceptoMasteryUseCase = Depends(get_consultar_concepto_mastery_uc),
+    user: dict = Depends(require_jwt),
 ):
     """Dominio real por concepto/sección del curso para un estudiante.
 
@@ -416,7 +445,7 @@ async def get_concept_mastery(
     tasa de acierto. Alimenta el radar, las barras y las recomendaciones del
     detalle del estudiante. Orden: peores primero.
     """
-    conceptos = await uc.execute(student_id, courseId)
+    conceptos = await uc.execute(de_quien(student_id, user), courseId)
     return [
         {
             "concepto": c.concepto,
@@ -460,6 +489,7 @@ async def get_weekly_progress(
     uc: ConsultarEvolucionEstudianteUseCase = Depends(
         get_consultar_evolucion_estudiante_uc
     ),
+    user: dict = Depends(require_jwt),
 ):
     """Evolución del dominio: dominio acumulado (running % de aciertos) a lo
     largo de la secuencia de actividades, en hasta 6 etapas.
@@ -467,7 +497,7 @@ async def get_weekly_progress(
     Se usa la secuencia (no semanas calendario) porque las notas de Moodle no
     traen fecha de envío fiable; así la curva refleja la evolución real.
     """
-    puntos = await uc.execute(student_id, courseId)
+    puntos = await uc.execute(de_quien(student_id, user), courseId)
     return [{"etapa": p.etapa, "dominio": p.dominio} for p in puntos]
 
 
@@ -476,12 +506,15 @@ async def get_preferences(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarPreferenciasUseCase = Depends(get_consultar_preferencias_uc),
+    user: dict = Depends(require_jwt),
 ):
     """Preferencia de formato del estudiante (en qué tipo de recurso rinde mejor).
 
     **Auth:** JWT
     """
-    return _serializar_preferencias(await uc.execute(student_id, courseId))
+    return _serializar_preferencias(
+        await uc.execute(de_quien(student_id, user), courseId)
+    )
 
 
 # Router interno: autenticación por service-key (sin JWT de usuario).
