@@ -53,6 +53,15 @@ FAKE_PAYLOAD = {
     "type": "access",
 }
 
+# El mismo token, pero de un participante: sirve para comprobar que las rutas
+# del panel de clase no se abren con la sesión de un estudiante.
+FAKE_PAYLOAD_ESTUDIANTE = {
+    "sub": "00000000-0000-0000-0000-000000000002",
+    "rol": "estudiante",
+    "permisos": ["leer"],
+    "type": "access",
+}
+
 
 class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
     def __init__(self):
@@ -223,6 +232,13 @@ async def client():
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def student_client(client):
+    """El mismo cliente, autenticado como estudiante en vez de docente."""
+    app.dependency_overrides[require_jwt] = lambda: FAKE_PAYLOAD_ESTUDIANTE
+    yield client
 
 
 @pytest_asyncio.fixture

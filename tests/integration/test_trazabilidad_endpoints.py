@@ -242,3 +242,46 @@ async def test_quiz_result_sin_token_retorna_401(anon_client):
         },
     )
     assert resp.status_code == 401
+
+
+# ── El panel de clase no se abre con la sesión de un estudiante ──────────────
+# Estas rutas solo exigían un JWT válido. Con el token de cualquiera de los
+# participantes se listaba a toda la clase y se descargaba el PDF con nombre,
+# correo y nivel de riesgo de cada compañero.
+
+CURSO = "00000000-0000-0000-0000-0000000000aa"
+
+
+async def test_progreso_de_la_clase_con_token_de_estudiante_es_403(student_client):
+    r = await student_client.get(f"/dashboard/teacher/{CURSO}/students-progress")
+    assert r.status_code == 403
+
+
+async def test_tendencia_con_token_de_estudiante_es_403(student_client):
+    r = await student_client.get(f"/dashboard/teacher/{CURSO}/trend")
+    assert r.status_code == 403
+
+
+async def test_reporte_pdf_con_token_de_estudiante_es_403(student_client):
+    r = await student_client.get(f"/dashboard/teacher/{CURSO}/report")
+    assert r.status_code == 403
+
+
+async def test_retroalimentacion_con_token_de_estudiante_es_403(student_client):
+    r = await student_client.post(
+        "/dashboard/teacher/feedback",
+        json={
+            "estudiante_id": "00000000-0000-0000-0000-000000000003",
+            "curso_id": CURSO,
+            "mensaje": "deberias repasar",
+            "tipo": "motivacional",
+        },
+    )
+    assert r.status_code == 403
+
+
+async def test_el_docente_sigue_entrando(client):
+    # La misma ruta con el token de siempre: el arreglo no cierra la puerta al
+    # panel, que es lo que la profesora usa el día del estudio.
+    r = await client.get(f"/dashboard/teacher/{CURSO}/students-progress")
+    assert r.status_code == 200
