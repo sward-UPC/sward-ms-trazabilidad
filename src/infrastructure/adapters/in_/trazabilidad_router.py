@@ -362,14 +362,21 @@ async def _get_interactions_handler(
     courseId: UUID | None,
     limit: int,
     repo: TrazabilidadPostgresAdapter,
+    solo_calificadas: bool = False,
 ) -> list[dict]:
-    items = await repo.find_interacciones(student_id, courseId, limit)
+    items = await repo.find_interacciones(
+        student_id, courseId, limit, solo_calificadas=solo_calificadas
+    )
     return [
         {
             "id": str(i.id),
             "actividad_id": str(i.actividad_id) if i.actividad_id else None,
             "concept_id": i.concept_id,
             "is_correct": i.is_correct,
+            # Quien consuma esto para knowledge-tracing tiene que poder separar
+            # una respuesta de una lectura: sin este campo las vistas entraban
+            # a la secuencia del SAKT como aciertos.
+            "es_vista": i.es_vista,
             "tipo": i.tipo.value,
             "fecha": i.fecha.isoformat(),
             "curso_id": str(i.curso_id),
@@ -587,13 +594,23 @@ async def get_interactions_internal(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
+    soloCalificadas: bool = Query(
+        default=False,
+        description="Deja fuera las vistas (lecturas, videos, soluciones). "
+        "Es lo que debe pedir quien construya la secuencia del SAKT.",
+    ),
     repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
 ):
     """Obtiene interacciones de un estudiante (auth service-key, s2s).
 
-    Usado por ms-recomendacion para construir la secuencia SAKT.
+    Usado por ms-recomendacion para construir la secuencia SAKT, que pide
+    ``soloCalificadas=true``: el entrenamiento descarta las vistas
+    (``/dashboard/training-data`` filtra ``es_vista=False``), así que servirlas
+    aquí dejaba al modelo con una entrada distinta a la que aprendió.
     """
-    return await _get_interactions_handler(student_id, courseId, limit, repo)
+    return await _get_interactions_handler(
+        student_id, courseId, limit, repo, solo_calificadas=soloCalificadas
+    )
 
 
 @internal_router.get(

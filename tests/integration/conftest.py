@@ -67,10 +67,14 @@ class FakeTrazabilidadRepo(TrazabilidadRepositoryPort):
         self.interacciones.append(interaccion)
         return interaccion
 
-    async def find_interacciones(self, estudiante_id, curso_id=None, limit=50):
+    async def find_interacciones(
+        self, estudiante_id, curso_id=None, limit=50, solo_calificadas=False
+    ):
         items = [i for i in self.interacciones if i.estudiante_id == estudiante_id]
         if curso_id:
             items = [i for i in items if i.curso_id == curso_id]
+        if solo_calificadas:
+            items = [i for i in items if not i.es_vista]
         return items[:limit]
 
     async def find_progreso(self, estudiante_id, curso_id):

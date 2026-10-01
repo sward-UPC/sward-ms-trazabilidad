@@ -123,7 +123,11 @@ class TrazabilidadRepositoryPort(ABC):
     ) -> InteraccionAcademica: ...
     @abstractmethod
     async def find_interacciones(
-        self, estudiante_id: UUID, curso_id: UUID | None = None, limit: int = 50
+        self,
+        estudiante_id: UUID,
+        curso_id: UUID | None = None,
+        limit: int = 50,
+        solo_calificadas: bool = False,
     ) -> list[InteraccionAcademica]: ...
     @abstractmethod
     async def find_progreso(

@@ -59,13 +59,27 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
         return i
 
     async def find_interacciones(
-        self, estudiante_id: UUID, curso_id: UUID | None = None, limit: int = 50
+        self,
+        estudiante_id: UUID,
+        curso_id: UUID | None = None,
+        limit: int = 50,
+        solo_calificadas: bool = False,
     ) -> list[InteraccionAcademica]:
+        """Las interacciones de un estudiante, de la más reciente a la más vieja.
+
+        Con ``solo_calificadas`` deja fuera las vistas (abrir un resumen, un
+        video, la solución). El filtro va en la consulta y no en quien llama
+        porque ``limit`` se aplica antes: filtrando después, un estudiante que
+        abre mucho material y responde poco devolvería casi solo vistas y la
+        secuencia calificada saldría recortada.
+        """
         q = select(InteraccionModel).where(
             InteraccionModel.estudiante_id == estudiante_id
         )
         if curso_id:
             q = q.where(InteraccionModel.curso_id == curso_id)
+        if solo_calificadas:
+            q = q.where(InteraccionModel.es_vista.is_(False))
         q = q.order_by(InteraccionModel.fecha.desc()).limit(limit)
         r = await self._s.execute(q)
         return [
@@ -79,6 +93,7 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
                 fecha=m.fecha,
                 concept_id=m.concept_id,
                 is_correct=m.is_correct,
+                es_vista=m.es_vista,
                 url_modulo=getattr(m, "url_modulo", "") or "",
                 nombre_actividad=getattr(m, "nombre_actividad", "") or "",
                 tipo_recurso=getattr(m, "tipo_recurso", "") or "",
