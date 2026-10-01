@@ -1,7 +1,7 @@
 from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 
 from src.application.use_cases.calcular_indicadores import (
@@ -113,6 +113,35 @@ from src.infrastructure.dependencies import (
 router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 
+# Quién puede mirar datos de otra persona. Es la misma lista para las rutas de
+# un estudiante concreto y para las del panel de clase: si cambia, cambia en los
+# dos sitios a la vez.
+ROLES_QUE_VEN_A_OTROS = ("docente", "administrador")
+
+
+async def solo_quien_ensena(user: dict = Depends(require_jwt)) -> dict:
+    """Corta el paso a quien no sea docente o administrador.
+
+    Las rutas de ``/dashboard/teacher/...`` solo exigían un JWT válido y nunca
+    miraban el rol, aunque su documentación prometiera un 403. Con la sesión de
+    cualquier estudiante se podía listar a toda la clase y descargar el reporte
+    en PDF, que lleva nombre, correo, nivel de riesgo y dominio de cada
+    compañero. Un token con un rol que no esté en la lista —o sin el claim— se
+    queda fuera, que es el lado seguro del error.
+
+    No comprueba que el docente dicte ESE curso: hoy el estudio tiene una sola
+    profesora y añadir esa consulta pedía traerse el catálogo de cursos a este
+    servicio. Queda anotado en la documentación de cada ruta para no prometer
+    lo que no se hace.
+    """
+    if user.get("rol") not in ROLES_QUE_VEN_A_OTROS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: se requiere rol de docente.",
+        )
+    return user
+
+
 def de_quien(student_id: UUID, user: dict) -> UUID:
     """El estudiante solo lee lo suyo; docente y administrador, lo de cualquiera.
 
@@ -125,7 +154,7 @@ def de_quien(student_id: UUID, user: dict) -> UUID:
     queda con lo suyo, que es el lado seguro del error. Las rutas internas
     (servicio a servicio) no pasan por aquí: usan la service-key.
     """
-    if user.get("rol") in ("docente", "administrador"):
+    if user.get("rol") in ROLES_QUE_VEN_A_OTROS:
         return student_id
     propio = user.get("sub")
     return UUID(propio) if propio else student_id
@@ -689,7 +718,7 @@ async def get_training_data(
             },
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
-        403: {"description": "Acceso denegado. No es docente del curso."},
+        403: {"description": "Acceso denegado. Requiere rol de docente."},
         404: {"description": "Curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -697,12 +726,17 @@ async def get_training_data(
 async def dashboard_docente(
     course_id: UUID = Path(..., description="UUID del curso"),
     uc: ConsultarDashboardDocenteUseCase = Depends(get_dashboard_docente_uc),
+    _: dict = Depends(solo_quien_ensena),
 ):
     """Obtiene el dashboard de progreso de todos los estudiantes para un docente.
 
-    **Flujo:** 1. Valida JWT 2. Verifica permisos de docente 3. Calcula métricas agregadas 4. Retorna dashboard
+    **Flujo:** 1. Valida JWT 2. Exige rol de docente 3. Calcula métricas agregadas 4. Retorna dashboard
 
-    **SLA:** <300ms | **Auth:** JWT | **Rate Limit:** 60 req/min
+    Devuelve nombre, correo y nivel de riesgo de cada estudiante del curso, de
+    modo que exige rol de docente o administrador. No comprueba que sea el
+    docente de ESE curso.
+
+    **SLA:** <300ms | **Auth:** JWT (docente) | **Rate Limit:** 60 req/min
     """
     estudiantes = await uc.execute(course_id)
     return [
@@ -734,11 +768,13 @@ async def dashboard_docente(
     responses={
         200: {"description": "Tendencia semanal histórica de la clase"},
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        403: {"description": "Acceso denegado. Requiere rol de docente."},
     },
 )
 async def tendencia_docente(
     course_id: UUID = Path(..., description="UUID del curso"),
     uc: ConsultarTendenciaEtapasUseCase = Depends(get_consultar_tendencia_etapas_uc),
+    _: dict = Depends(solo_quien_ensena),
 ) -> list[dict]:
     """Tendencia del curso: dominio promedio acumulado y nº de estudiantes en
     riesgo, a lo largo de la secuencia de actividades (hasta 6 etapas).
@@ -763,6 +799,7 @@ async def tendencia_docente(
             "content": {"application/pdf": {}},
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        403: {"description": "Acceso denegado. Requiere rol de docente."},
         404: {"description": "Curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -773,13 +810,15 @@ async def reporte_docente_pdf(
         None, max_length=200, description="Nombre legible del curso para la cabecera"
     ),
     uc: GenerarReporteDocenteUseCase = Depends(get_generar_reporte_docente_uc),
+    _: dict = Depends(solo_quien_ensena),
 ) -> StreamingResponse:
     """Genera y descarga el reporte de progreso de la clase en PDF.
 
     El PDF incluye cabecera SWARD, un resumen agregado por nivel de riesgo y el
-    detalle por estudiante (nombre, correo, riesgo, dominio, interacciones).
+    detalle por estudiante (nombre, correo, riesgo, dominio, interacciones): es
+    el dato más sensible que sirve este servicio, de ahí el rol de docente.
 
-    **Auth:** JWT | **Content-Type:** application/pdf
+    **Auth:** JWT (docente) | **Content-Type:** application/pdf
     """
     pdf = await uc.execute(course_id, curso_nombre=courseName)
     filename = f"reporte_clase_{course_id}.pdf"
@@ -797,17 +836,21 @@ async def reporte_docente_pdf(
     responses={
         201: {"description": "Retroalimentación registrada"},
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        403: {"description": "Acceso denegado. Requiere rol de docente."},
         422: {"description": "Datos inválidos."},
     },
 )
 async def registrar_feedback(
     body: FeedbackRequest,
-    user: dict = Depends(require_jwt),
+    user: dict = Depends(solo_quien_ensena),
     uc: RegistrarFeedbackUseCase = Depends(get_registrar_feedback_uc),
 ) -> FeedbackResponse:
     """Registra retroalimentación del docente autenticado hacia un estudiante.
 
-    El `docente_id` se toma del JWT (claim `sub`), no del body.
+    El `docente_id` se toma del JWT (claim `sub`), no del body. Tomarlo del
+    token evitaba suplantar a otro docente, pero no impedía que un estudiante
+    escribiera retroalimentación a nombre propio hacia cualquier compañero: eso
+    lo corta el rol.
 
     **Auth:** JWT (docente)
     """
