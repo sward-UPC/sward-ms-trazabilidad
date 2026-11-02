@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     lms_service_url: str = "http://localhost:8002"
     usuarios_service_url: str = "http://usuarios.sward.local:8000"
+    # De aquí sale quién dicta cada curso. En la nube llega como
+    # CURSOS_SERVICE_URL, el alias que services_stack.py pone a todos.
+    cursos_service_url: str = "http://localhost:8004"
     aws_region: str = "us-east-1"
     eventbridge_bus_name: str = "sward-event-bus"
     environment: str = "development"
