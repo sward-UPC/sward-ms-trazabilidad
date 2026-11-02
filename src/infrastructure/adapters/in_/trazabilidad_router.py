@@ -1,9 +1,14 @@
+import logging
 from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 
+from src.application.ports.out_.cursos_client_port import (
+    AsignacionNoDisponibleError,
+    CursosClientPort,
+)
 from src.application.use_cases.calcular_indicadores import (
     CalcularIndicadoresCommand,
     CalcularIndicadoresUseCase,
@@ -102,11 +107,15 @@ from src.infrastructure.dependencies import (
     get_registrar_quiz_result_uc,
     get_registrar_material_completado_uc,
     get_consultar_racha_uc,
+    get_cursos_client,
     get_sincronizar_lms_uc,
     get_trazabilidad_repo,
     require_jwt,
     require_service_key,
+    token_del_usuario,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Todos los endpoints de trazabilidad exigen un JWT de acceso válido.
@@ -115,24 +124,99 @@ router = APIRouter(tags=["Trazabilidad"], dependencies=[Depends(require_jwt)])
 
 # Quién puede mirar datos de otra persona. Es la misma lista para las rutas de
 # un estudiante concreto y para las del panel de clase: si cambia, cambia en los
-# dos sitios a la vez.
+# dos sitios a la vez. El docente, además, solo en los cursos que dicta.
 ROLES_QUE_VEN_A_OTROS = ("docente", "administrador")
 
+# Lo que la documentación de cada ruta dice sobre esa regla.
+RESPUESTAS_DEL_DOCENTE = {
+    403: {
+        "description": "Acceso denegado. El docente solo entra a los cursos que "
+        "dicta; el administrador, a todos."
+    },
+    503: {
+        "description": "No se pudo consultar quién dicta el curso; no se "
+        "entregan datos."
+    },
+}
 
-async def solo_quien_ensena(user: dict = Depends(require_jwt)) -> dict:
-    """Corta el paso a quien no sea docente o administrador.
 
-    Las rutas de ``/dashboard/teacher/...`` solo exigían un JWT válido y nunca
-    miraban el rol, aunque su documentación prometiera un 403. Con la sesión de
-    cualquier estudiante se podía listar a toda la clase y descargar el reporte
-    en PDF, que lleva nombre, correo, nivel de riesgo y dominio de cada
-    compañero. Un token con un rol que no esté en la lista —o sin el claim— se
-    queda fuera, que es el lado seguro del error.
+def _es_quien_pregunta(estudiante_id: UUID, user: dict) -> bool:
+    try:
+        return estudiante_id == UUID(str(user.get("sub")))
+    except ValueError:
+        return False
 
-    No comprueba que el docente dicte ESE curso: hoy el estudio tiene una sola
-    profesora y añadir esa consulta pedía traerse el catálogo de cursos a este
-    servicio. Queda anotado en la documentación de cada ruta para no prometer
-    lo que no se hace.
+
+async def dicta_el_curso(
+    curso_id: UUID, user: dict, token: str, cursos: CursosClientPort
+) -> None:
+    """Deja pasar al administrador y al docente asignado a ESE curso; al resto, 403.
+
+    La asignación es el ``docente_id`` del curso en ms-cursos-recursos, el mismo
+    dato con el que el frontend arma el panel del docente. El administrador no
+    la necesita: ve todos los cursos, y no depende de que esa consulta responda.
+
+    Si la asignación no se puede consultar, la respuesta es un 503 y no se
+    entregan datos: «no lo sé» no se confunde con «sí lo dicta».
+    """
+    rol = user.get("rol")
+    if rol == "administrador":
+        return
+    if rol != "docente":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: se requiere rol de docente.",
+        )
+    try:
+        docente = await cursos.docente_del_curso(curso_id, token)
+    except AsignacionNoDisponibleError as exc:
+        logger.warning(
+            "No se pudo consultar quién dicta el curso %s: %s", curso_id, exc
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No se pudo comprobar que dictes este curso. "
+                "Inténtalo de nuevo en unos minutos."
+            ),
+        ) from exc
+    if docente is None or not _es_quien_pregunta(docente, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: no dictas este curso.",
+        )
+
+
+async def solo_quien_ensena(
+    course_id: UUID = Path(..., description="UUID del curso"),
+    user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
+) -> dict:
+    """Deja entrar al panel de un curso solo a quien lo dicta o al administrador.
+
+    Las rutas de ``/dashboard/teacher/{course_id}/...`` sirven la lista de la
+    clase y el reporte en PDF, con nombre, correo, nivel de riesgo y dominio de
+    cada estudiante. Primero solo exigían un JWT válido —cualquier estudiante
+    listaba a la clase— y luego solo el rol: cualquier docente entraba a
+    cualquier curso cambiando el UUID de la URL.
+
+    Ahora el estudiante, un rol desconocido o un token sin el claim reciben 403;
+    el docente pasa solo si es el asignado a ESE curso en ms-cursos-recursos; el
+    administrador pasa siempre. Si la asignación no se puede consultar, 503 y
+    sin datos (ver ``dicta_el_curso``).
+    """
+    await dicta_el_curso(course_id, user, token, cursos)
+    return user
+
+
+async def solo_rol_que_ensena(user: dict = Depends(require_jwt)) -> dict:
+    """Corta al estudiante, o a un rol desconocido, antes de leer el body.
+
+    En la retroalimentación el curso llega en el body, y FastAPI valida el body
+    antes de entrar a la ruta: sin este primer filtro, un estudiante con un body
+    mal formado recibía 422 en vez de 403. Que el docente dicte ese curso se
+    comprueba después, con el body ya leído (``dicta_el_curso``).
     """
     if user.get("rol") not in ROLES_QUE_VEN_A_OTROS:
         raise HTTPException(
@@ -158,6 +242,32 @@ def de_quien(student_id: UUID, user: dict) -> UUID:
         return student_id
     propio = user.get("sub")
     return UUID(propio) if propio else student_id
+
+
+async def de_quien_en_el_curso(
+    student_id: UUID,
+    curso_id: UUID | None,
+    user: dict,
+    token: str,
+    cursos: CursosClientPort,
+) -> UUID:
+    """``de_quien`` más la regla del docente: solo en los cursos que dicta.
+
+    El estudiante se sigue quedando con lo suyo y el administrador lee lo de
+    cualquiera, igual que antes. El docente que mira a otra persona tiene que
+    indicar el curso y dictarlo: con eso la respuesta queda acotada a su clase.
+    Sin curso —la racha, que es global, o las interacciones de todos los
+    cursos— mezclaría cursos que no son suyos, así que es 403. Lo propio lo
+    sigue leyendo sin más.
+    """
+    if user.get("rol") == "docente" and not _es_quien_pregunta(student_id, user):
+        if curso_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acceso denegado: indica uno de los cursos que dictas.",
+            )
+        await dicta_el_curso(curso_id, user, token, cursos)
+    return de_quien(student_id, user)
 
 
 @router.post(
@@ -302,6 +412,7 @@ async def registrar_material_completado(
             },
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        **RESPUESTAS_DEL_DOCENTE,
         404: {"description": "Estudiante o curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -311,17 +422,20 @@ async def get_progress(
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarProgresoUseCase = Depends(get_consultar_progreso_uc),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Obtiene el progreso de un estudiante en un curso específico.
 
     **Flujo:** 1. Valida JWT 2. Consulta base de datos 3. Calcula métricas de progreso 4. Retorna información
 
-    **SLA:** <150ms | **Auth:** JWT | **Rate Limit:** 120 req/min
+    **SLA:** <150ms | **Auth:** JWT (el docente, solo en los cursos que dicta) | **Rate Limit:** 120 req/min
     """
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
+    )
     p = await uc.execute(
-        ConsultarProgresoCommand(
-            estudiante_id=de_quien(student_id, user), curso_id=courseId
-        )
+        ConsultarProgresoCommand(estudiante_id=estudiante_id, curso_id=courseId)
     )
     if not p:
         return {
@@ -360,6 +474,7 @@ async def get_progress(
             },
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        **RESPUESTAS_DEL_DOCENTE,
         404: {"description": "Estudiante o curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -369,17 +484,20 @@ async def get_indicators(
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: CalcularIndicadoresUseCase = Depends(get_calcular_indicadores_uc),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Obtiene los indicadores de desempeño de un estudiante en un curso.
 
     **Flujo:** 1. Valida JWT 2. Calcula indicadores 3. Retorna lista de indicadores
 
-    **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
+    **SLA:** <200ms | **Auth:** JWT (el docente, solo en los cursos que dicta) | **Rate Limit:** 120 req/min
     """
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
+    )
     indicadores = await uc.execute(
-        CalcularIndicadoresCommand(
-            estudiante_id=de_quien(student_id, user), curso_id=courseId
-        )
+        CalcularIndicadoresCommand(estudiante_id=estudiante_id, curso_id=courseId)
     )
     return [
         {"nombre": i.nombre, "valor": i.valor, "unidad": i.unidad} for i in indicadores
@@ -423,6 +541,7 @@ async def _get_interactions_handler(
     responses={
         200: {"description": "Interacciones obtenidas exitosamente"},
         401: {"description": "No autorizado. JWT inválido o expirado."},
+        **RESPUESTAS_DEL_DOCENTE,
         404: {"description": "Estudiante no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -433,34 +552,45 @@ async def get_interactions(
     limit: int = Query(default=50, ge=1, le=200),
     repo: TrazabilidadPostgresAdapter = Depends(get_trazabilidad_repo),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Obtiene el historial de interacciones de un estudiante (auth JWT).
 
+    Sin ``courseId`` devuelve las de todos sus cursos; por eso el docente que
+    consulta a otra persona tiene que indicar uno de los cursos que dicta.
+
     **SLA:** <200ms | **Auth:** JWT | **Rate Limit:** 120 req/min
     """
-    return await _get_interactions_handler(
-        de_quien(student_id, user), courseId, limit, repo
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
     )
+    return await _get_interactions_handler(estudiante_id, courseId, limit, repo)
 
 
 @router.get(
     "/students/{student_id}/streak",
     status_code=status.HTTP_200_OK,
     response_model=RachaResponse,
+    responses={**RESPUESTAS_DEL_DOCENTE},
 )
 async def get_streak(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     uc: ConsultarRachaUseCase = Depends(get_consultar_racha_uc),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Racha GLOBAL de días consecutivos con actividad (en todos los cursos).
 
     La racha de estudio no es por curso: cualquier interacción del alumno cuenta.
-    Solo vive si el último día activo es hoy o ayer (hora de Perú).
+    Solo vive si el último día activo es hoy o ayer (hora de Perú). Como no hay
+    un curso que comprobar, el docente solo lee la suya.
 
     **Auth:** JWT
     """
-    dias = await uc.execute(de_quien(student_id, user))
+    estudiante_id = await de_quien_en_el_curso(student_id, None, user, token, cursos)
+    dias = await uc.execute(estudiante_id)
     return {"dias_racha": dias}
 
 
@@ -468,12 +598,15 @@ async def get_streak(
     "/students/{student_id}/concept-mastery",
     status_code=status.HTTP_200_OK,
     response_model=list[ConceptoMasteryResponse],
+    responses={**RESPUESTAS_DEL_DOCENTE},
 )
 async def get_concept_mastery(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarConceptoMasteryUseCase = Depends(get_consultar_concepto_mastery_uc),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Dominio real por concepto/sección del curso para un estudiante.
 
@@ -481,7 +614,10 @@ async def get_concept_mastery(
     tasa de acierto. Alimenta el radar, las barras y las recomendaciones del
     detalle del estudiante. Orden: peores primero.
     """
-    conceptos = await uc.execute(de_quien(student_id, user), courseId)
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
+    )
+    conceptos = await uc.execute(estudiante_id, courseId)
     return [
         {
             "concepto": c.concepto,
@@ -518,6 +654,7 @@ async def platform_activity(
     "/students/{student_id}/weekly-progress",
     status_code=status.HTTP_200_OK,
     response_model=list[EvolucionEtapaResponse],
+    responses={**RESPUESTAS_DEL_DOCENTE},
 )
 async def get_weekly_progress(
     student_id: UUID = Path(..., description="UUID del estudiante"),
@@ -526,6 +663,8 @@ async def get_weekly_progress(
         get_consultar_evolucion_estudiante_uc
     ),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Evolución del dominio: dominio acumulado (running % de aciertos) a lo
     largo de la secuencia de actividades, en hasta 6 etapas.
@@ -533,24 +672,34 @@ async def get_weekly_progress(
     Se usa la secuencia (no semanas calendario) porque las notas de Moodle no
     traen fecha de envío fiable; así la curva refleja la evolución real.
     """
-    puntos = await uc.execute(de_quien(student_id, user), courseId)
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
+    )
+    puntos = await uc.execute(estudiante_id, courseId)
     return [{"etapa": p.etapa, "dominio": p.dominio} for p in puntos]
 
 
-@router.get("/students/{student_id}/preferences", status_code=status.HTTP_200_OK)
+@router.get(
+    "/students/{student_id}/preferences",
+    status_code=status.HTTP_200_OK,
+    responses={**RESPUESTAS_DEL_DOCENTE},
+)
 async def get_preferences(
     student_id: UUID = Path(..., description="UUID del estudiante"),
     courseId: UUID = Query(..., description="UUID del curso"),
     uc: ConsultarPreferenciasUseCase = Depends(get_consultar_preferencias_uc),
     user: dict = Depends(require_jwt),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
 ):
     """Preferencia de formato del estudiante (en qué tipo de recurso rinde mejor).
 
-    **Auth:** JWT
+    **Auth:** JWT (el docente, solo en los cursos que dicta)
     """
-    return _serializar_preferencias(
-        await uc.execute(de_quien(student_id, user), courseId)
+    estudiante_id = await de_quien_en_el_curso(
+        student_id, courseId, user, token, cursos
     )
+    return _serializar_preferencias(await uc.execute(estudiante_id, courseId))
 
 
 # Router interno: autenticación por service-key (sin JWT de usuario).
@@ -718,7 +867,7 @@ async def get_training_data(
             },
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
-        403: {"description": "Acceso denegado. Requiere rol de docente."},
+        **RESPUESTAS_DEL_DOCENTE,
         404: {"description": "Curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -730,13 +879,12 @@ async def dashboard_docente(
 ):
     """Obtiene el dashboard de progreso de todos los estudiantes para un docente.
 
-    **Flujo:** 1. Valida JWT 2. Exige rol de docente 3. Calcula métricas agregadas 4. Retorna dashboard
+    **Flujo:** 1. Valida JWT 2. Exige ser el docente del curso o administrador 3. Calcula métricas agregadas 4. Retorna dashboard
 
     Devuelve nombre, correo y nivel de riesgo de cada estudiante del curso, de
-    modo que exige rol de docente o administrador. No comprueba que sea el
-    docente de ESE curso.
+    modo que solo lo ve el docente asignado a ESE curso o un administrador.
 
-    **SLA:** <300ms | **Auth:** JWT (docente) | **Rate Limit:** 60 req/min
+    **SLA:** <300ms | **Auth:** JWT (docente del curso) | **Rate Limit:** 60 req/min
     """
     estudiantes = await uc.execute(course_id)
     return [
@@ -768,7 +916,7 @@ async def dashboard_docente(
     responses={
         200: {"description": "Tendencia semanal histórica de la clase"},
         401: {"description": "No autorizado. JWT inválido o expirado."},
-        403: {"description": "Acceso denegado. Requiere rol de docente."},
+        **RESPUESTAS_DEL_DOCENTE,
     },
 )
 async def tendencia_docente(
@@ -782,7 +930,7 @@ async def tendencia_docente(
     Igual que la evolución por estudiante, se usa la SECUENCIA (no semanas
     calendario) porque las notas de Moodle no traen fecha de envío fiable y el
     historial de snapshots solo crece con el tiempo. Así la curva refleja datos
-    reales desde la primera sincronización. **Auth:** JWT
+    reales desde la primera sincronización. **Auth:** JWT (docente del curso)
     """
     puntos = await uc.execute(course_id)
     return [
@@ -799,7 +947,7 @@ async def tendencia_docente(
             "content": {"application/pdf": {}},
         },
         401: {"description": "No autorizado. JWT inválido o expirado."},
-        403: {"description": "Acceso denegado. Requiere rol de docente."},
+        **RESPUESTAS_DEL_DOCENTE,
         404: {"description": "Curso no encontrado."},
         500: {"description": "Error interno del servidor."},
     },
@@ -816,9 +964,10 @@ async def reporte_docente_pdf(
 
     El PDF incluye cabecera SWARD, un resumen agregado por nivel de riesgo y el
     detalle por estudiante (nombre, correo, riesgo, dominio, interacciones): es
-    el dato más sensible que sirve este servicio, de ahí el rol de docente.
+    el dato más sensible que sirve este servicio, de ahí que solo lo descargue
+    el docente de ese curso o un administrador.
 
-    **Auth:** JWT (docente) | **Content-Type:** application/pdf
+    **Auth:** JWT (docente del curso) | **Content-Type:** application/pdf
     """
     pdf = await uc.execute(course_id, curso_nombre=courseName)
     filename = f"reporte_clase_{course_id}.pdf"
@@ -836,13 +985,15 @@ async def reporte_docente_pdf(
     responses={
         201: {"description": "Retroalimentación registrada"},
         401: {"description": "No autorizado. JWT inválido o expirado."},
-        403: {"description": "Acceso denegado. Requiere rol de docente."},
+        **RESPUESTAS_DEL_DOCENTE,
         422: {"description": "Datos inválidos."},
     },
 )
 async def registrar_feedback(
     body: FeedbackRequest,
-    user: dict = Depends(solo_quien_ensena),
+    user: dict = Depends(solo_rol_que_ensena),
+    token: str = Depends(token_del_usuario),
+    cursos: CursosClientPort = Depends(get_cursos_client),
     uc: RegistrarFeedbackUseCase = Depends(get_registrar_feedback_uc),
 ) -> FeedbackResponse:
     """Registra retroalimentación del docente autenticado hacia un estudiante.
@@ -850,10 +1001,12 @@ async def registrar_feedback(
     El `docente_id` se toma del JWT (claim `sub`), no del body. Tomarlo del
     token evitaba suplantar a otro docente, pero no impedía que un estudiante
     escribiera retroalimentación a nombre propio hacia cualquier compañero: eso
-    lo corta el rol.
+    lo corta el rol. Y el curso viene en el body, así que también se comprueba
+    que el docente lo dicte: si no, escribiría a nombre de un curso ajeno.
 
-    **Auth:** JWT (docente)
+    **Auth:** JWT (docente del curso)
     """
+    await dicta_el_curso(body.curso_id, user, token, cursos)
     feedback = await uc.execute(
         RegistrarFeedbackCommand(
             docente_id=UUID(user["sub"]),

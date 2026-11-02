@@ -32,18 +32,21 @@ from src.domain.entities.progreso_academico import (
 from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
+from src.application.ports.out_.cursos_client_port import CursosClientPort
 from src.application.ports.out_.usuarios_client_port import UsuariosClientPort
 from src.infrastructure.adapters.in_.main import app
 from src.infrastructure.adapters.out_.pdf_reporte_renderer import PdfReporteRenderer
 from src.infrastructure.dependencies import (
     get_calcular_indicadores_uc,
     get_consultar_progreso_uc,
+    get_cursos_client,
     get_dashboard_docente_uc,
     get_generar_reporte_docente_uc,
     get_registrar_feedback_uc,
     get_registrar_interaccion_uc,
     get_registrar_quiz_result_uc,
     require_jwt,
+    token_del_usuario,
 )
 
 FAKE_PAYLOAD = {
@@ -195,6 +198,17 @@ class _StubEventPublisher:
         return None
 
 
+class _FakeCursosClient(CursosClientPort):
+    """Simula ms-cursos-recursos: el docente de prueba dicta todos los cursos.
+
+    Que un docente no entre a un curso ajeno se prueba en
+    tests/unit/test_docente_solo_sus_cursos.py.
+    """
+
+    async def docente_del_curso(self, curso_id: UUID, token: str) -> UUID | None:
+        return UUID(FAKE_PAYLOAD["sub"])
+
+
 @pytest_asyncio.fixture
 async def client():
     repo = FakeTrazabilidadRepo()
@@ -226,6 +240,8 @@ async def client():
     )
     # Sobreescribe la validación JWT por un payload fake (autenticación simulada).
     app.dependency_overrides[require_jwt] = lambda: FAKE_PAYLOAD
+    app.dependency_overrides[token_del_usuario] = lambda: "token-de-prueba"
+    app.dependency_overrides[get_cursos_client] = lambda: _FakeCursosClient()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
