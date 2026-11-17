@@ -13,4 +13,5 @@ def _serializar_preferencias(pref) -> dict:
         "engagement_por_tipo": pref.engagement_por_tipo,
         "formato_mas_consumido": pref.formato_mas_consumido,
         "recursos_vistos": pref.recursos_vistos,
+        "recursos_completados": pref.recursos_completados,
     }

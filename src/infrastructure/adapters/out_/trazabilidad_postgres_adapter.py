@@ -23,6 +23,9 @@ from src.application.ports.out_.trazabilidad_repository_port import (
     TrazabilidadRepositoryPort,
 )
 from src.domain.value_objects.nivel_riesgo import NivelRiesgo, TipoInteraccion
+from src.application.use_cases.registrar_material_completado import (
+    TIPOS_RECURSO_COMPLETADO,
+)
 from src.infrastructure.db.models.trazabilidad_models import (
     FeedbackModel,
     IndicadorModel,
@@ -30,6 +33,80 @@ from src.infrastructure.db.models.trazabilidad_models import (
     ProgresoHistorialModel,
     ProgresoModel,
 )
+
+
+def resumir_preferencias(rows) -> PreferenciasFormato:
+    """Resume las interacciones de un estudiante en un curso en sus preferencias.
+
+    Cada fila es ``(tipo_recurso, nota, is_correct, es_vista, url_modulo)``.
+    """
+    # RENDIMIENTO (calificadas): tipo -> [suma de notas, total]
+    agregados: dict[str, list[float]] = {}
+    # ENGAGEMENT (vistas): tipo -> count de vistas
+    vistas_por_tipo: dict[str, int] = {}
+    # Recursos ya vistos (url_modulo distintos, no vacíos).
+    recursos_vistos: list[str] = []
+    vistos_set: set[str] = set()
+    # Recursos marcados como completados en SWARD (defecto 16): se reconocen por el
+    # tipo con que los guarda «material completado», sin importar si son vista o
+    # práctica calificada.
+    recursos_completados: list[str] = []
+    completados_set: set[str] = set()
+    for tipo_recurso, nota, is_correct, es_vista, url_modulo in rows:
+        if (
+            tipo_recurso in TIPOS_RECURSO_COMPLETADO
+            and url_modulo
+            and url_modulo not in completados_set
+        ):
+            completados_set.add(url_modulo)
+            recursos_completados.append(url_modulo)
+        if es_vista:
+            if tipo_recurso:
+                vistas_por_tipo[tipo_recurso] = vistas_por_tipo.get(tipo_recurso, 0) + 1
+            if url_modulo and url_modulo not in vistos_set:
+                vistos_set.add(url_modulo)
+                recursos_vistos.append(url_modulo)
+            continue
+        if not tipo_recurso:
+            continue
+        valor = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
+        acc = agregados.setdefault(tipo_recurso, [0.0, 0.0])
+        acc[0] += valor
+        acc[1] += 1
+
+    por_tipo = [
+        {"tipo": tipo, "promedio": round(suma / total, 1), "total": int(total)}
+        for tipo, (suma, total) in agregados.items()
+    ]
+    por_tipo.sort(key=lambda x: x["promedio"], reverse=True)
+
+    candidatos = [p for p in por_tipo if p["total"] >= 2]
+    if not candidatos and por_tipo:
+        candidatos = [max(por_tipo, key=lambda x: x["total"])]
+    tipo_fuerte = (
+        max(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
+    )
+    tipo_debil = (
+        min(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
+    )
+
+    engagement_por_tipo = [
+        {"tipo": tipo, "vistas": vistas} for tipo, vistas in vistas_por_tipo.items()
+    ]
+    engagement_por_tipo.sort(key=lambda x: x["vistas"], reverse=True)
+    formato_mas_consumido = (
+        engagement_por_tipo[0]["tipo"] if engagement_por_tipo else ""
+    )
+
+    return PreferenciasFormato(
+        por_tipo=por_tipo,
+        tipo_fuerte=tipo_fuerte,
+        tipo_debil=tipo_debil,
+        engagement_por_tipo=engagement_por_tipo,
+        formato_mas_consumido=formato_mas_consumido,
+        recursos_vistos=recursos_vistos,
+        recursos_completados=recursos_completados,
+    )
 
 
 class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
@@ -344,62 +421,7 @@ class TrazabilidadPostgresAdapter(TrazabilidadRepositoryPort):
             )
         ).all()
 
-        # RENDIMIENTO (calificadas): tipo -> [suma de notas, total]
-        agregados: dict[str, list[float]] = {}
-        # ENGAGEMENT (vistas): tipo -> count de vistas
-        vistas_por_tipo: dict[str, int] = {}
-        # Recursos ya vistos (url_modulo distintos, no vacíos).
-        recursos_vistos: list[str] = []
-        vistos_set: set[str] = set()
-        for tipo_recurso, nota, is_correct, es_vista, url_modulo in rows:
-            if es_vista:
-                if tipo_recurso:
-                    vistas_por_tipo[tipo_recurso] = (
-                        vistas_por_tipo.get(tipo_recurso, 0) + 1
-                    )
-                if url_modulo and url_modulo not in vistos_set:
-                    vistos_set.add(url_modulo)
-                    recursos_vistos.append(url_modulo)
-                continue
-            if not tipo_recurso:
-                continue
-            valor = float(nota) if nota is not None else (100.0 if is_correct else 0.0)
-            acc = agregados.setdefault(tipo_recurso, [0.0, 0.0])
-            acc[0] += valor
-            acc[1] += 1
-
-        por_tipo = [
-            {"tipo": tipo, "promedio": round(suma / total, 1), "total": int(total)}
-            for tipo, (suma, total) in agregados.items()
-        ]
-        por_tipo.sort(key=lambda x: x["promedio"], reverse=True)
-
-        candidatos = [p for p in por_tipo if p["total"] >= 2]
-        if not candidatos and por_tipo:
-            candidatos = [max(por_tipo, key=lambda x: x["total"])]
-        tipo_fuerte = (
-            max(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
-        )
-        tipo_debil = (
-            min(candidatos, key=lambda x: x["promedio"])["tipo"] if candidatos else ""
-        )
-
-        engagement_por_tipo = [
-            {"tipo": tipo, "vistas": vistas} for tipo, vistas in vistas_por_tipo.items()
-        ]
-        engagement_por_tipo.sort(key=lambda x: x["vistas"], reverse=True)
-        formato_mas_consumido = (
-            engagement_por_tipo[0]["tipo"] if engagement_por_tipo else ""
-        )
-
-        return PreferenciasFormato(
-            por_tipo=por_tipo,
-            tipo_fuerte=tipo_fuerte,
-            tipo_debil=tipo_debil,
-            engagement_por_tipo=engagement_por_tipo,
-            formato_mas_consumido=formato_mas_consumido,
-            recursos_vistos=recursos_vistos,
-        )
+        return resumir_preferencias(rows)
 
     async def concepto_mastery(
         self, estudiante_id: UUID, curso_id: UUID

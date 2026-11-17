@@ -196,6 +196,7 @@ class _Entorno:
                     engagement_por_tipo={},
                     formato_mas_consumido="quiz",
                     recursos_vistos=3,
+                    recursos_completados=[],
                 )
             ),
         }

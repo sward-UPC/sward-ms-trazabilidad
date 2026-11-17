@@ -24,6 +24,9 @@ _TIPO_RECURSO = {
     "lectura": "lectura_generada",
     "video": "video_generado",
 }
+# Tipos con los que queda guardado un recurso marcado como completado: así se
+# distinguen de las vistas e intentos que llegan sincronizados desde Moodle.
+TIPOS_RECURSO_COMPLETADO = frozenset(_TIPO_RECURSO.values())
 
 
 @dataclass
@@ -38,6 +41,9 @@ class RegistrarMaterialCompletadoCommand:
     concepto: str
     tipo: str  # "practica" | "lectura" | "video"
     aprobado: bool = True  # solo aplica a práctica
+    # Dirección del recurso completado. Sin ella no se sabía qué recurso fue y,
+    # al recargar, volvía a ofrecerse como pendiente (defecto 16, CP080).
+    url_modulo: str = ""
 
 
 class RegistrarMaterialCompletadoUseCase:
@@ -72,6 +78,7 @@ class RegistrarMaterialCompletadoUseCase:
                 es_vista=True,
                 nombre_actividad=f"{etiqueta} — {cmd.concepto}",
                 tipo_recurso=tipo_recurso,
+                url_modulo=cmd.url_modulo,
             )
             guardada = await self._repo.save_interaccion(interaccion)
         else:
@@ -87,6 +94,7 @@ class RegistrarMaterialCompletadoUseCase:
                 es_vista=False,
                 nombre_actividad=f"{etiqueta} — {cmd.concepto}",
                 tipo_recurso=tipo_recurso,
+                url_modulo=cmd.url_modulo,
             )
             guardada = await self._repo.save_interaccion(interaccion)
 

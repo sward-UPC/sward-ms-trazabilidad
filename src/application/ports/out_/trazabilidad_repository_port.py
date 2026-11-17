@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 from datetime import datetime
 
@@ -66,6 +66,8 @@ class PreferenciasFormato:
     engagement_por_tipo: list[dict]
     formato_mas_consumido: str
     recursos_vistos: list[str]
+    # Recursos que el estudiante marcó como completados en SWARD (defecto 16).
+    recursos_completados: list[str] = field(default_factory=list)
 
 
 @dataclass
