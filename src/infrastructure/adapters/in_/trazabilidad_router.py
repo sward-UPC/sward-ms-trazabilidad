@@ -384,6 +384,7 @@ async def registrar_material_completado(
             concepto=body.concepto,
             tipo=body.tipo,
             aprobado=body.aprobado,
+            url_modulo=body.url_modulo,
         )
     )
     return MaterialCompletadoResponse(

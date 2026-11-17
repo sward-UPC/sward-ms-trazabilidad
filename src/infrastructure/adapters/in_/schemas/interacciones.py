@@ -169,11 +169,18 @@ class MaterialCompletadoRequest(BaseModel):
     )
     tipo: str = Field(description="practica | lectura | video")
     aprobado: bool = Field(default=True, description="Solo aplica a práctica")
+    url_modulo: str = Field(
+        default="",
+        max_length=500,
+        description="Dirección del recurso completado (opcional, http o https)",
+    )
 
     @model_validator(mode="after")
     def _validar_tipo(self) -> "MaterialCompletadoRequest":
         if self.tipo not in ("practica", "lectura", "video"):
             raise ValueError("tipo debe ser practica, lectura o video")
+        if self.url_modulo and not self.url_modulo.startswith(("https://", "http://")):
+            raise ValueError("url_modulo debe empezar con http:// o https://")
         return self
 
 
